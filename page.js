@@ -8,29 +8,25 @@ const ONLINE_READERS = [
     name: 'Aurora',
     specialty: 'Amor y reconciliaciones',
     status: 'Libre',
-    greeting: 'Hola cielo, soy Aurora de Tarot Celestial. Estoy contigo para mirar tu consulta con calma. ¿En qué te gustaría que profundizáramos hoy?',
-    pitch: 'Aurora es de las más queridas para amor y reconciliaciones.'
+    greeting: 'Hola cielo, soy Aurora de Tarot Celestial. Estoy contigo para mirar tu consulta con calma. ¿En qué te gustaría que profundizáramos hoy?'
   },
   {
     name: 'María',
     specialty: 'Videncia natural',
     status: 'Libre',
-    greeting: 'Hola corazón, soy María. Cuéntame despacito tu situación y voy mirando tu energía.',
-    pitch: 'María conecta muy bien con emociones y bloqueos.'
+    greeting: 'Hola corazón, soy María. Cuéntame despacito tu situación y voy mirando tu energía.'
   },
   {
     name: 'Luna',
     specialty: 'Energía y caminos',
     status: 'Ocupada',
-    greeting: 'Hola cielo, soy Luna. Vamos a mirar los caminos que tienes abiertos ahora mismo.',
-    pitch: 'Luna es muy buena leyendo energía y caminos.'
+    greeting: 'Hola cielo, soy Luna. Vamos a mirar los caminos que tienes abiertos ahora mismo.'
   },
   {
     name: 'Sara',
     specialty: 'Decisiones sentimentales',
     status: 'Libre',
-    greeting: 'Hola bonita, soy Sara. Si estás entre dudas o decisiones del corazón, te ayudo a verlo claro.',
-    pitch: 'Sara da mucha claridad en decisiones sentimentales.'
+    greeting: 'Hola bonita, soy Sara. Si estás entre dudas o decisiones del corazón, te ayudo a verlo claro.'
   }
 ]
 
@@ -64,7 +60,6 @@ export default function ChatPage() {
   const [input, setInput] = useState('')
   const [isTyping, setIsTyping] = useState(false)
   const [messages, setMessages] = useState([])
-  const [hasAskedTopic, setHasAskedTopic] = useState(false)
   const [consultTopic, setConsultTopic] = useState(null)
   const [readerPhase, setReaderPhase] = useState('intro')
   const [freeQuestionUsed, setFreeQuestionUsed] = useState(false)
@@ -73,8 +68,7 @@ export default function ChatPage() {
 
   const messagesContainerRef = useRef(null)
   const shouldStickToBottomRef = useRef(true)
-  const typingTimeoutRef = useRef(null)
-  const delayedTimeoutsRef = useRef([])
+  const timeoutsRef = useRef([])
 
   useEffect(() => {
     const init = async () => {
@@ -97,10 +91,9 @@ export default function ChatPage() {
         setProfile(profileData)
         setStep('chat')
         addDelayedCentralMessage(
-          `Hola ${profileData.display_name}, bienvenida de nuevo a Tarot Celestial. Estoy aquí contigo, cielo. Cuéntame con calma qué te preocupa hoy y te ayudo a elegir a la mejor tarotista.`,
-          900
+          `Hola ${profileData.display_name}, bienvenida de nuevo a Tarot Celestial. Cuéntame qué tema quieres mirar hoy y te recomiendo a la mejor tarotista.`,
+          700
         )
-        setHasAskedTopic(true)
       }
 
       setLoading(false)
@@ -109,50 +102,45 @@ export default function ChatPage() {
     init()
 
     return () => {
-      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
-      delayedTimeoutsRef.current.forEach(clearTimeout)
+      timeoutsRef.current.forEach(clearTimeout)
     }
   }, [])
 
   useEffect(() => {
     const el = messagesContainerRef.current
     if (!el) return
-
     if (shouldStickToBottomRef.current) {
       el.scrollTop = el.scrollHeight
     }
   }, [messages, isTyping])
 
-  const handleMessagesScroll = () => {
+  const onMessagesScroll = () => {
     const el = messagesContainerRef.current
     if (!el) return
-    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
-    shouldStickToBottomRef.current = distanceFromBottom < 80
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight
+    shouldStickToBottomRef.current = distance < 80
+  }
+
+  const queueTimeout = (fn, delay) => {
+    const id = setTimeout(fn, delay)
+    timeoutsRef.current.push(id)
+    return id
   }
 
   const addMessageNow = (sender, text) => {
     setMessages((prev) => [...prev, { sender, text }])
   }
 
-  const addDelayedMessage = (sender, text, delay = 1500) => {
+  const addDelayedMessage = (sender, text, delay = 1200) => {
     setIsTyping(true)
-
-    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
-    const timeout = setTimeout(() => {
+    queueTimeout(() => {
       addMessageNow(sender, text)
       setIsTyping(false)
     }, delay)
-
-    delayedTimeoutsRef.current.push(timeout)
   }
 
-  const addDelayedCentralMessage = (text, delay = 1500) => {
-    addDelayedMessage('central', text, delay)
-  }
-
-  const addDelayedReaderMessage = (text, delay = 2500) => {
-    addDelayedMessage('reader', text, delay)
-  }
+  const addDelayedCentralMessage = (text, delay = 1200) => addDelayedMessage('central', text, delay)
+  const addDelayedReaderMessage = (text, delay = 2200) => addDelayedMessage('reader', text, delay)
 
   const saveProfile = async () => {
     if (!name.trim() || !country.trim()) {
@@ -161,7 +149,6 @@ export default function ChatPage() {
     }
 
     const { data: authData } = await supabase.auth.getUser()
-
     const newProfile = {
       auth_user_id: authData.user.id,
       display_name: name.trim(),
@@ -169,7 +156,6 @@ export default function ChatPage() {
     }
 
     const { error } = await supabase.from('profiles').insert(newProfile)
-
     if (error) {
       alert('No se pudo guardar el perfil')
       return
@@ -178,10 +164,9 @@ export default function ChatPage() {
     setProfile(newProfile)
     setStep('chat')
     addDelayedCentralMessage(
-      `Perfecto ${name.trim()}, como es tu primera vez en Tarot Celestial tienes una consulta gratis. Dime el tema que quieres mirar y te recomiendo a la tarotista ideal.`,
-      900
+      `Perfecto ${name.trim()}, como es tu primera vez en Tarot Celestial tienes una consulta gratis. Dime si quieres mirar amor, trabajo, familia o energía y te paso con la chica ideal.`,
+      700
     )
-    setHasAskedTopic(true)
   }
 
   const goToReader = (readerName, topic = 'amor') => {
@@ -193,15 +178,12 @@ export default function ChatPage() {
     setConsultTopic(topic)
     setPendingRecommendation(null)
 
-    const timeout = setTimeout(() => {
+    queueTimeout(() => {
       setMode('reader')
-      setMessages([
-        { sender: 'reader', text: reader.greeting }
-      ])
+      setMessages([{ sender: 'reader', text: reader.greeting }])
       setReaderPhase('intro')
-    }, 1800)
-
-    delayedTimeoutsRef.current.push(timeout)
+      setInput('')
+    }, 1600)
   }
 
   const backToCentral = (message) => {
@@ -211,145 +193,129 @@ export default function ChatPage() {
     setMessages([])
     setInput('')
     setPendingRecommendation(null)
-
-    const greeting =
-      message ||
-      `Hola ${profile?.display_name || 'cielo'}, ya estoy otra vez contigo en central. Cuéntame tranquila qué necesitas y te ayudo.`
-
-    addDelayedCentralMessage(greeting, 900)
+    addDelayedCentralMessage(
+      message || `Hola ${profile?.display_name || 'cielo'}, ya estoy contigo otra vez en central. Dime si quieres seguir con la consulta o activar créditos.`,
+      800
+    )
   }
 
-  const recommendReader = (readerName, topic, customText) => {
+  const recommend = (readerName, topic, text) => {
     setConsultTopic(topic)
     setPendingRecommendation(readerName)
-    addDelayedCentralMessage(customText, 1800)
+    addDelayedCentralMessage(text, 1500)
   }
 
-  const handleCentralMessage = (currentInput) => {
-    const lower = normalizeText(currentInput)
+  const handleCentralMessage = (raw) => {
+    const lower = normalizeText(raw)
 
-    if (!hasAskedTopic) {
-      addDelayedCentralMessage(
-        `Cuéntame cielo, ¿qué deseas consultar hoy? Amor, trabajo, familia o energía.`,
-        1000
-      )
-      setHasAskedTopic(true)
+    // DIRECT TRANSFERS FIRST
+    if (lower.includes('aurora')) {
+      addDelayedCentralMessage('Claro cielo, te paso con Aurora ahora mismo.', 800)
+      queueTimeout(() => goToReader('Aurora', consultTopic || 'amor'), 1000)
+      return
+    }
+
+    if (lower.includes('maria')) {
+      addDelayedCentralMessage('Perfecto cielo, te paso con María ahora mismo.', 800)
+      queueTimeout(() => goToReader('María', consultTopic || 'general'), 1000)
+      return
+    }
+
+    if (lower.includes('sara')) {
+      addDelayedCentralMessage('Perfecto cielo, te paso con Sara en un momento.', 800)
+      queueTimeout(() => goToReader('Sara', consultTopic || 'general'), 1000)
       return
     }
 
     if (pendingRecommendation && (
       lower === 'si' ||
       lower === 'sí' ||
-      lower.includes('pasame') ||
-      lower.includes('pasame con ella') ||
-      lower.includes('pasame con el') ||
-      lower.includes('de acuerdo') ||
-      lower.includes('vale') ||
-      lower.includes('perfecto') ||
-      lower.includes('ok')
+      lower === 'vale' ||
+      lower === 'ok' ||
+      lower === 'perfecto' ||
+      lower === 'de acuerdo' ||
+      lower === 'pasame' ||
+      lower === 'pasame con ella'
     )) {
-      addDelayedCentralMessage(`Perfecto cielo, te paso ahora mismo con ${pendingRecommendation}.`, 1000)
-      const timeout = setTimeout(() => goToReader(pendingRecommendation, consultTopic || 'general'), 1300)
-      delayedTimeoutsRef.current.push(timeout)
+      addDelayedCentralMessage(`Perfecto cielo, te paso con ${pendingRecommendation} ahora mismo.`, 800)
+      queueTimeout(() => goToReader(pendingRecommendation, consultTopic || 'general'), 1000)
       return
     }
 
-    if (lower.includes('aurora')) {
-      addDelayedCentralMessage('Perfecto cielo, te voy a pasar con Aurora. Dame un instante.', 1000)
-      const timeout = setTimeout(() => goToReader('Aurora', consultTopic || 'amor'), 1300)
-      delayedTimeoutsRef.current.push(timeout)
-      return
-    }
-
-    if (lower.includes('maria')) {
-      addDelayedCentralMessage('Perfecto cielo, te paso con María ahora mismo.', 1000)
-      const timeout = setTimeout(() => goToReader('María', consultTopic || 'general'), 1300)
-      delayedTimeoutsRef.current.push(timeout)
-      return
-    }
-
+    // TOPICS
     if (
       lower.includes('amor') ||
       lower.includes('pareja') ||
-      lower.includes('volver') ||
       lower.includes('ex') ||
+      lower.includes('volver') ||
       lower.includes('relacion') ||
-      lower.includes('relación')
+      lower.includes('reconcili')
     ) {
-      recommendReader(
+      recommend(
         'Aurora',
         'amor',
-        'De las chicas que tengo libres ahora mismo, Aurora es de las más queridas para amor y reconciliaciones. Tiene muchísima mano para este tipo de consultas. Si quieres, te paso con ella ahora mismo.'
+        'Ahora mismo, para amor, la mejor opción que tengo libre es Aurora. Se le da especialmente bien reconciliaciones, bloqueos y terceras personas. Si quieres, te la paso ahora mismo.'
       )
       return
     }
 
-    if (lower.includes('trabajo') || lower.includes('dinero') || lower.includes('economia') || lower.includes('economía')) {
-      recommendReader(
+    if (lower.includes('trabajo') || lower.includes('dinero') || lower.includes('economia')) {
+      recommend(
         'María',
         'trabajo',
-        'Para orientarte ya mismo, María puede mirarte muy bien la energía general y los bloqueos que tengas. Si quieres, te paso con ella ahora mismo mientras dejamos también anotada una reserva con Estela para trabajo.'
+        'Para trabajo y estabilidad, ahora mismo te puedo pasar con María para una orientación inicial. Si quieres, te la paso ya.'
       )
       return
     }
 
-    if (lower.includes('familia') || lower.includes('hijo') || lower.includes('madre') || lower.includes('padre')) {
-      recommendReader(
+    if (lower.includes('familia') || lower.includes('madre') || lower.includes('padre') || lower.includes('hijo')) {
+      recommend(
         'María',
         'familia',
-        'Para temas de familia y emociones, María suele conectar enseguida. Si te parece bien, te paso con ella ahora mismo.'
+        'Para familia y emociones, María suele conectar enseguida. Si quieres, te la paso ahora mismo.'
       )
       return
     }
 
-    if (lower.includes('energia') || lower.includes('energía') || lower.includes('espiritual') || lower.includes('camino')) {
-      recommendReader(
-        'Luna',
+    if (lower.includes('energia') || lower.includes('espiritual') || lower.includes('camino')) {
+      recommend(
+        'Sara',
         'energía',
-        'Luna es muy buena en energía y caminos, pero ahora la tengo ocupada. Si quieres, puedo dejarte con Sara o María para empezar, o tomarte una reserva con Luna.'
+        'Para energía y decisiones, te puedo pasar con Sara ahora mismo. Si quieres, te la paso ya.'
       )
       return
     }
 
-    if (lower.includes('precio') || lower.includes('creditos') || lower.includes('creditos') || lower.includes('preguntas')) {
-      const userCountry = profile?.country || country || 'tu país'
+    if (lower.includes('precio') || lower.includes('credito') || lower.includes('pregunta')) {
       addDelayedCentralMessage(
-        `Claro cielo. Ahora mismo para ${userCountry} tengo estas ofertas: 3 preguntas por 3€, 5 preguntas por 4,50€ y 10 preguntas por 7€. Tú me dices cuál te encaja más y te lo preparo.`,
-        1400
+        'Claro cielo. Ahora mismo tengo 3 preguntas por 3€, 5 preguntas por 4,50€ y 10 preguntas por 7€. Si quieres luego lo integramos ya con pago automático.',
+        1200
       )
       return
     }
 
-    if (lower.includes('reserva') || lower.includes('reservar') || lower.includes('cita')) {
+    if (lower.includes('hola') || lower.includes('buenas')) {
       addDelayedCentralMessage(
-        'Claro cielo, te lo preparo sin problema. En el siguiente paso dejaremos ya la reserva guardada con email automático, pero la idea es justo esa: que yo desde central te la gestione.',
-        1400
-      )
-      return
-    }
-
-    if (lower.includes('hola') || lower.includes('buenas') || lower.includes('buenos dias') || lower.includes('buenas tardes')) {
-      addDelayedCentralMessage(
-        `Hola cielo, encantada de atenderte. Cuéntame qué te preocupa y te ayudo a elegir a la mejor tarotista para ti.`,
-        1100
+        'Hola cielo, encantada de atenderte. Dime qué tema te preocupa y te recomiendo a la mejor tarotista que tenga libre.',
+        1000
       )
       return
     }
 
     addDelayedCentralMessage(
-      'Te entiendo, cielo. Para orientarte bien, dime si lo que más te preocupa ahora mismo es amor, trabajo, familia o energía, y así no te hago perder tiempo con una tarotista que no sea la ideal para ti.',
-      1500
+      'Te entiendo, cielo. Cuéntame un poquito mejor qué quieres mirar y yo te digo enseguida con quién te va a ir mejor.',
+      1200
     )
   }
 
-  const handleReaderMessage = (currentInput) => {
-    const lower = normalizeText(currentInput)
+  const handleReaderMessage = (raw) => {
+    const lower = normalizeText(raw)
 
     if (readerPhase === 'intro') {
       setReaderPhase('details')
       addDelayedReaderMessage(
         'Claro cielo. Para empezar bien, dime tu signo y explícame un poquito mejor la situación que quieres mirar conmigo.',
-        2200
+        2000
       )
       return
     }
@@ -360,60 +326,55 @@ export default function ChatPage() {
       lower.includes('va a volver') ||
       lower.includes('volvera') ||
       lower.includes('esta con alguien') ||
-      lower.includes('esta con otra') ||
-      lower.includes('me quiere')
+      lower.includes('esta con otra')
     )) {
       setFreeQuestionUsed(true)
       setReaderPhase('followup')
       addDelayedReaderMessage(
-        'Voy a mirártelo despacio, cielo. Dame un momento para conectar con tu energía y con la situación.',
-        3200
+        'Voy a mirártelo despacio, cielo. Dame un momento para conectar con tu energía y hacer la tirada.',
+        2800
       )
-
-      const timeout = setTimeout(() => {
+      queueTimeout(() => {
         addDelayedReaderMessage(
-          'Por lo que me marca la tirada, sí veo intención de acercamiento, pero también veo mucho orgullo y bastante bloqueo emocional. Hay sentimientos, aunque ahora mismo no fluye todo como debería.',
+          'Por lo que veo, sí hay sentimientos y sí veo acercamiento, pero también orgullo y bloqueo. La situación no está cerrada, cielo.',
           4200
         )
-      }, 600)
-
-      delayedTimeoutsRef.current.push(timeout)
+      }, 500)
       return
     }
 
     if (readerPhase === 'followup') {
       setReaderPhase('paid')
       addDelayedReaderMessage(
-        'Puedo seguir contigo, cielo, pero para profundizar un poco más necesito que el central te active créditos. Te voy a devolver con él para que no pierdas el hilo de tu consulta.',
-        2400
+        'Puedo seguir profundizando contigo, cielo, pero para eso ya necesito que el central te active créditos. Te devuelvo con él y sigues justo donde lo hemos dejado.',
+        2200
       )
-      const timeout = setTimeout(() => {
-        backToCentral(`Hola ${profile?.display_name || 'cielo'}, Aurora me comenta que la consulta va bien encaminada. Si quieres seguir profundizando, te activo ahora mismo un paquete de créditos y te la vuelvo a pasar.`)
-      }, 3400)
-      delayedTimeoutsRef.current.push(timeout)
+      queueTimeout(() => {
+        backToCentral(`Hola ${profile?.display_name || 'cielo'}, ${selectedReader?.name || 'la tarotista'} me dice que puede seguir profundizando contigo. Si quieres, te activo ahora mismo un paquete de créditos.`)
+      }, 3200)
       return
     }
 
     addDelayedReaderMessage(
-      'Te sigo leyendo, cielo. Cuéntame un poquito más para ir afinando la energía.',
-      2000
+      'Te sigo leyendo, cielo. Cuéntame un poquito más para afinar la energía.',
+      1800
     )
   }
 
   const handleSend = () => {
     if (!input.trim() || mode === 'connecting') return
 
-    const currentInput = input.trim()
-    addMessageNow('client', currentInput)
+    const current = input.trim()
+    addMessageNow('client', current)
     setInput('')
 
     if (mode === 'central') {
-      handleCentralMessage(currentInput)
+      handleCentralMessage(current)
       return
     }
 
     if (mode === 'reader') {
-      handleReaderMessage(currentInput)
+      handleReaderMessage(current)
     }
   }
 
@@ -441,22 +402,9 @@ export default function ChatPage() {
           </div>
 
           <div style={{ display: 'grid', gap: 14 }}>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Tu nombre"
-              style={{ padding: '14px 16px', borderRadius: 14, border: '1px solid #dccca4', outline: 'none' }}
-            />
-            <input
-              value={country}
-              onChange={(e) => setCountry(e.target.value)}
-              placeholder="Tu país"
-              style={{ padding: '14px 16px', borderRadius: 14, border: '1px solid #dccca4', outline: 'none' }}
-            />
-            <button
-              onClick={saveProfile}
-              style={{ padding: '14px 18px', borderRadius: 14, border: 'none', background: '#6f3ea8', color: 'white', fontWeight: 700, cursor: 'pointer' }}
-            >
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Tu nombre" style={{ padding: '14px 16px', borderRadius: 14, border: '1px solid #dccca4', outline: 'none' }} />
+            <input value={country} onChange={(e) => setCountry(e.target.value)} placeholder="Tu país" style={{ padding: '14px 16px', borderRadius: 14, border: '1px solid #dccca4', outline: 'none' }} />
+            <button onClick={saveProfile} style={{ padding: '14px 18px', borderRadius: 14, border: 'none', background: '#6f3ea8', color: 'white', fontWeight: 700, cursor: 'pointer' }}>
               Continuar al chat
             </button>
           </div>
@@ -483,10 +431,7 @@ export default function ChatPage() {
             </div>
           </div>
 
-          <button
-            onClick={handleLogout}
-            style={{ border: '1px solid #d8c082', background: '#fff', color: '#6f3ea8', borderRadius: 12, padding: '10px 14px', cursor: 'pointer', fontWeight: 600 }}
-          >
+          <button onClick={handleLogout} style={{ border: '1px solid #d8c082', background: '#fff', color: '#6f3ea8', borderRadius: 12, padding: '10px 14px', cursor: 'pointer', fontWeight: 600 }}>
             Cerrar sesión
           </button>
         </div>
@@ -496,12 +441,20 @@ export default function ChatPage() {
             <h3 style={{ color: '#5b2c83', marginTop: 0 }}>Tarotistas en línea</h3>
             <div style={{ display: 'grid', gap: 10 }}>
               {ONLINE_READERS.map((reader) => {
-                const computedStatus =
-                  selectedReader?.name === reader.name && mode === 'reader'
-                    ? 'Ocupada'
-                    : reader.status
+                const computedStatus = selectedReader?.name === reader.name && mode === 'reader' ? 'Ocupada' : reader.status
                 return (
-                  <div key={reader.name} style={{ padding: 12, borderRadius: 14, background: selectedReader?.name === reader.name ? '#f6efff' : '#faf7ff', border: '1px solid #ece1ff' }}>
+                  <button
+                    key={reader.name}
+                    onClick={() => reader.status === 'Libre' && goToReader(reader.name, consultTopic || 'general')}
+                    style={{
+                      padding: 12,
+                      borderRadius: 14,
+                      background: selectedReader?.name === reader.name ? '#f6efff' : '#faf7ff',
+                      border: '1px solid #ece1ff',
+                      textAlign: 'left',
+                      cursor: reader.status === 'Libre' ? 'pointer' : 'default'
+                    }}
+                  >
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
                       <strong style={{ color: '#4a2468' }}>{reader.name}</strong>
                       <span style={{ color: computedStatus === 'Libre' ? '#1f8b4c' : '#c17a00', fontSize: 12, fontWeight: 700 }}>
@@ -509,7 +462,7 @@ export default function ChatPage() {
                       </span>
                     </div>
                     <div style={{ color: '#7a6690', fontSize: 13, marginTop: 4 }}>{reader.specialty}</div>
-                  </div>
+                  </button>
                 )
               })}
             </div>
@@ -542,11 +495,7 @@ export default function ChatPage() {
               </div>
             ) : (
               <>
-                <div
-                  ref={messagesContainerRef}
-                  onScroll={handleMessagesScroll}
-                  style={{ flex: 1, minHeight: 0, padding: 18, overflowY: 'auto', display: 'grid', gap: 12 }}
-                >
+                <div ref={messagesContainerRef} onScroll={onMessagesScroll} style={{ flex: 1, minHeight: 0, padding: 18, overflowY: 'auto', display: 'grid', gap: 12 }}>
                   {messages.map((message, index) => {
                     const isClient = message.sender === 'client'
                     const isReader = message.sender === 'reader'
@@ -580,6 +529,23 @@ export default function ChatPage() {
                     </div>
                   )}
                 </div>
+
+                {mode === 'central' && pendingRecommendation && (
+                  <div style={{ padding: '0 18px 12px 18px', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    <button
+                      onClick={() => goToReader(pendingRecommendation, consultTopic || 'general')}
+                      style={{ padding: '10px 14px', borderRadius: 999, border: 'none', background: '#6f3ea8', color: 'white', cursor: 'pointer', fontWeight: 700 }}
+                    >
+                      Pasarme con {pendingRecommendation}
+                    </button>
+                    <button
+                      onClick={() => setPendingRecommendation(null)}
+                      style={{ padding: '10px 14px', borderRadius: 999, border: '1px solid #dccca4', background: '#fff', color: '#6f3ea8', cursor: 'pointer', fontWeight: 700 }}
+                    >
+                      Seguir hablando con central
+                    </button>
+                  </div>
+                )}
 
                 <div style={{ padding: 18, borderTop: '1px solid #f1e7cd', display: 'flex', gap: 12, flexShrink: 0 }}>
                   <input
