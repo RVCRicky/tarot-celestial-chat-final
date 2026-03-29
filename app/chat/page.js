@@ -3,18 +3,18 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 
 const ALL_READERS = [
-  { name: 'Aurora', specialty: 'Amor y reconciliaciones', turn: 'morning', sales: 'de las más queridas para amor, retornos y bloqueos sentimentales', greeting: 'Hola cielo, soy Aurora de Tarot Celestial. Estoy contigo para mirar tu situación con calma y profundidad.' },
-  { name: 'María', specialty: 'Trabajo y estabilidad', turn: 'morning', sales: 'conecta muy rápido con temas de trabajo y decisiones importantes', greeting: 'Hola corazón, soy María. Cuéntame despacito qué te preocupa y voy mirando tu energía.' },
-  { name: 'Luna', specialty: 'Energía y caminos', turn: 'morning', sales: 'muy buena en energía, caminos abiertos y dudas espirituales', greeting: 'Hola cielo, soy Luna. Vamos a mirar los caminos que tienes abiertos ahora mismo.' },
-  { name: 'Sara', specialty: 'Decisiones sentimentales', turn: 'morning', sales: 'da mucha claridad cuando hay dudas del corazón', greeting: 'Hola bonita, soy Sara. Estoy aquí contigo para ayudarte a ver esto claro.' },
-  { name: 'Candela', specialty: 'Rupturas y regresos', turn: 'afternoon', sales: 'muy fuerte en reconciliaciones y terceras personas', greeting: 'Hola cielo, soy Candela. Vamos a mirar despacito lo que está pasando en tu vida sentimental.' },
-  { name: 'Noa', specialty: 'Destino y crecimiento', turn: 'afternoon', sales: 'te orienta muy bien en cambios de ciclo y crecimiento personal', greeting: 'Hola corazón, soy Noa. Cuéntame lo que te inquieta y lo vemos con calma.' },
-  { name: 'Violeta', specialty: 'Alma gemela', turn: 'afternoon', sales: 'es de las más buscadas para vínculos profundos y alma gemela', greeting: 'Hola cielo, soy Violeta. Estoy contigo para mirar lo que te une a esa persona.' },
-  { name: 'Rocío', specialty: 'Celos e infidelidad', turn: 'afternoon', sales: 'muy clara en celos, engaños y relaciones inestables', greeting: 'Hola bonita, soy Rocío. Vamos a mirar la verdad de esta situación.' },
-  { name: 'Alma', specialty: 'Espiritualidad', turn: 'night', sales: 'muy intuitiva en temas espirituales y energía profunda', greeting: 'Hola cielo, soy Alma. Respira y cuéntame despacito qué necesitas mirar hoy.' },
-  { name: 'Nerea', specialty: 'Respuestas rápidas', turn: 'night', sales: 'muy directa para preguntas concretas y urgentes', greeting: 'Hola corazón, soy Nerea. Dime tu consulta y voy directa al punto.' },
-  { name: 'Mara', specialty: 'Medium', turn: 'night', sales: 'muy especial para conexión espiritual y mensajes profundos', greeting: 'Hola cielo, soy Mara. Voy a acompañarte para mirar esto con profundidad.' },
-  { name: 'Estela', specialty: 'Dinero y prosperidad', turn: 'night', sales: 'muy fuerte en economía, prosperidad y bloqueos materiales', greeting: 'Hola bonita, soy Estela. Cuéntame qué te preocupa y lo vemos con claridad.' }
+  { name: 'Aurora', specialty: 'Amor y reconciliaciones', turn: 'morning', greeting: 'Hola cielo, soy Aurora de Tarot Celestial. Estoy aquí contigo para mirar tu situación con calma y con el corazón abierto.' },
+  { name: 'María', specialty: 'Trabajo y estabilidad', turn: 'morning', greeting: 'Hola corazón, soy María. Respira hondo y cuéntame qué te preocupa, voy a mirar tu energía despacito.' },
+  { name: 'Luna', specialty: 'Energía y caminos', turn: 'morning', greeting: 'Hola cielo, soy Luna. Vamos a mirar qué caminos tienes abiertos y qué energía te está rodeando.' },
+  { name: 'Sara', specialty: 'Decisiones sentimentales', turn: 'morning', greeting: 'Hola bonita, soy Sara. Estoy contigo para ayudarte a ver esto con claridad y serenidad.' },
+  { name: 'Candela', specialty: 'Rupturas y regresos', turn: 'afternoon', greeting: 'Hola cielo, soy Candela. Vamos a mirar con calma lo que está pasando en tu vínculo.' },
+  { name: 'Noa', specialty: 'Destino y crecimiento', turn: 'afternoon', greeting: 'Hola corazón, soy Noa. Cuéntame lo que sientes y lo vamos viendo paso a paso.' },
+  { name: 'Violeta', specialty: 'Alma gemela', turn: 'afternoon', greeting: 'Hola cielo, soy Violeta. Estoy aquí para mirar lo que te une a esa persona.' },
+  { name: 'Rocío', specialty: 'Celos e infidelidad', turn: 'afternoon', greeting: 'Hola bonita, soy Rocío. Voy a mirar con sinceridad esta situación para darte claridad.' },
+  { name: 'Alma', specialty: 'Espiritualidad', turn: 'night', greeting: 'Hola cielo, soy Alma. Respira y cuéntame despacito qué necesitas mirar hoy.' },
+  { name: 'Nerea', specialty: 'Respuestas rápidas', turn: 'night', greeting: 'Hola corazón, soy Nerea. Dime tu consulta y voy directa a lo importante.' },
+  { name: 'Mara', specialty: 'Medium', turn: 'night', greeting: 'Hola cielo, soy Mara. Voy a acompañarte para mirar esto con profundidad.' },
+  { name: 'Estela', specialty: 'Dinero y prosperidad', turn: 'night', greeting: 'Hola bonita, soy Estela. Cuéntame qué te preocupa y lo vemos con claridad.' }
 ]
 
 function normalizeText(value) {
@@ -45,6 +45,45 @@ function buildReaders(activeReaderName) {
   })
 }
 
+function classifyTopic(text) {
+  const lower = normalizeText(text)
+  if (lower.includes('amor') || lower.includes('ex') || lower.includes('pareja') || lower.includes('volver') || lower.includes('relacion')) return 'amor'
+  if (lower.includes('trabajo') || lower.includes('dinero') || lower.includes('econom')) return 'trabajo'
+  if (lower.includes('energia') || lower.includes('espiritual') || lower.includes('camino')) return 'energia'
+  if (lower.includes('familia') || lower.includes('hijo') || lower.includes('madre') || lower.includes('padre')) return 'familia'
+  if (lower.includes('duda') || lower.includes('decision')) return 'decision'
+  return 'general'
+}
+
+function isRealQuestion(text) {
+  const lower = normalizeText(text)
+  if (!lower) return false
+  const ignored = [
+    'hola', 'buenas', 'vale', 'ok', 'gracias', 'perfecto', 'si', 'sí',
+    'soy piscis', 'soy aries', 'soy tauro', 'soy geminis', 'soy cáncer',
+    'soy cancer', 'soy leo', 'soy virgo', 'soy libra', 'soy escorpio',
+    'soy sagitario', 'soy capricornio', 'soy acuario'
+  ]
+  if (ignored.includes(lower)) return false
+  if (lower.length < 8) return false
+  return (
+    lower.includes('?') ||
+    lower.includes('quiero saber') ||
+    lower.includes('me gustaria saber') ||
+    lower.includes('me gustaría saber') ||
+    lower.includes('va a volver') ||
+    lower.includes('volvera') ||
+    lower.includes('volverá') ||
+    lower.includes('esta con') ||
+    lower.includes('está con') ||
+    lower.includes('que siente') ||
+    lower.includes('qué siente') ||
+    lower.includes('como me ira') ||
+    lower.includes('cómo me irá') ||
+    lower.includes('quiero consultar')
+  )
+}
+
 export default function ChatPage() {
   const [loading, setLoading] = useState(true)
   const [profile, setProfile] = useState(null)
@@ -58,13 +97,18 @@ export default function ChatPage() {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [isTyping, setIsTyping] = useState(false)
+  const [typingLabel, setTypingLabel] = useState('Central está escribiendo...')
   const [reservationMode, setReservationMode] = useState(false)
   const [reservationReader, setReservationReader] = useState('')
   const [reservationDay, setReservationDay] = useState('')
   const [reservationTime, setReservationTime] = useState('')
   const [reservationNote, setReservationNote] = useState('')
+  const [currentTopic, setCurrentTopic] = useState('general')
+  const [readerStage, setReaderStage] = useState('intro')
+  const [questionConsumed, setQuestionConsumed] = useState(false)
   const messagesRef = useRef(null)
   const timeoutRef = useRef([])
+  const scrollLockRef = useRef(true)
 
   const readers = useMemo(() => buildReaders(activeReader), [activeReader])
 
@@ -94,7 +138,12 @@ export default function ChatPage() {
         setProfile(profileData)
         setCredits(profileData.credits || 0)
         setStep('chat')
-        addCentralDelayed(`Hola ${profileData.display_name}, bienvenida de nuevo a Tarot Celestial 💫 Cuéntame con calma qué te preocupa ahora mismo y te ayudaré a elegir a la mejor tarotista.`)
+        addDelayedMessage(
+          'central',
+          `Hola ${profileData.display_name}, bienvenida de nuevo a Tarot Celestial 💫 Estoy aquí contigo. Cuéntame con calma qué te preocupa en este momento y te ayudaré a elegir la mejor energía para tu consulta.`,
+          1100,
+          'Central está escribiendo...'
+        )
       }
 
       setLoading(false)
@@ -105,10 +154,19 @@ export default function ChatPage() {
   }, [])
 
   useEffect(() => {
-    if (messagesRef.current) {
-      messagesRef.current.scrollTop = messagesRef.current.scrollHeight
+    const el = messagesRef.current
+    if (!el) return
+    if (scrollLockRef.current) {
+      el.scrollTop = el.scrollHeight
     }
   }, [messages, isTyping])
+
+  const onMessagesScroll = () => {
+    const el = messagesRef.current
+    if (!el) return
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    scrollLockRef.current = distanceFromBottom < 80
+  }
 
   const queueTimeout = (fn, delay) => {
     const id = setTimeout(fn, delay)
@@ -119,20 +177,29 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, { sender, text }])
   }
 
-  const addCentralDelayed = (text, delay = 1200) => {
+  const addDelayedMessage = (sender, text, delay = 1200, label = 'Central está escribiendo...') => {
+    setTypingLabel(label)
     setIsTyping(true)
     queueTimeout(() => {
-      pushMessage('central', text)
+      pushMessage(sender, text)
       setIsTyping(false)
     }, delay)
   }
 
-  const addReaderDelayed = (text, delay = 2200) => {
+  const createHumanTypingSequence = (sender, text, totalDelay, label) => {
+    setTypingLabel(label)
     setIsTyping(true)
     queueTimeout(() => {
-      pushMessage('reader', text)
       setIsTyping(false)
-    }, delay)
+    }, Math.max(500, totalDelay * 0.35))
+    queueTimeout(() => {
+      setTypingLabel(label)
+      setIsTyping(true)
+    }, Math.max(900, totalDelay * 0.55))
+    queueTimeout(() => {
+      pushMessage(sender, text)
+      setIsTyping(false)
+    }, totalDelay)
   }
 
   const saveProfile = async () => {
@@ -160,7 +227,12 @@ export default function ChatPage() {
     setProfile(newProfile)
     setCredits(0)
     setStep('chat')
-    addCentralDelayed(`Perfecto ${name.trim()}, como es tu primera vez en Tarot Celestial tienes una consulta gratis. Cuéntame el tema y te paso con la mejor tarotista.`)
+    addDelayedMessage(
+      'central',
+      `Perfecto ${name.trim()}, como es tu primera vez en Tarot Celestial tienes una consulta gratis. Cuéntame el tema que quieres mirar y te recomendaré a la tarotista ideal para ti.`,
+      1200,
+      'Central está escribiendo...'
+    )
   }
 
   const connectToReader = (readerName, topic = 'general') => {
@@ -169,11 +241,15 @@ export default function ChatPage() {
 
     setMode('connecting')
     setActiveReader(readerName)
+    setCurrentTopic(topic)
+    setQuestionConsumed(false)
+    setReaderStage('intro')
+    setInput('')
 
     queueTimeout(() => {
       setMode('reader')
       setMessages([{ sender: 'reader', text: reader.greeting }])
-    }, 1600)
+    }, 1800)
   }
 
   const backToCentral = (customMessage) => {
@@ -181,8 +257,13 @@ export default function ChatPage() {
     setActiveReader(null)
     setMessages([])
     setInput('')
-    addCentralDelayed(
-      customMessage || `Ya estoy contigo otra vez, cielo 💫 Dime si quieres seguir con tu consulta, activar créditos o hacer una reserva.`
+    setQuestionConsumed(false)
+    setReaderStage('intro')
+    addDelayedMessage(
+      'central',
+      customMessage || `Ya estoy contigo otra vez, cielo 💫 Dime si quieres seguir con tu consulta, activar créditos o dejar una reserva preparada.`,
+      1000,
+      'Central está escribiendo...'
     )
   }
 
@@ -193,9 +274,14 @@ export default function ChatPage() {
     }
 
     if (credits <= 0) {
-      addCentralDelayed('Cielo, para continuar necesito activarte créditos. Puedes comprarlos ahora mismo y seguimos justo donde lo dejamos 💫', 1000)
       setMode('central')
       setActiveReader(null)
+      addDelayedMessage(
+        'central',
+        'Cielo, para seguir profundizando contigo necesito activarte créditos. Cuando quieras puedes comprarlos desde la derecha y seguimos justo donde lo hemos dejado 💫',
+        1100,
+        'Central está escribiendo...'
+      )
       return false
     }
 
@@ -246,7 +332,49 @@ export default function ChatPage() {
     setReservationTime('')
     setReservationNote('')
 
-    addCentralDelayed(`Perfecto cielo 💫 te he dejado la reserva con ${reservationReader}. En esta versión queda guardada en base de datos. El email automático queda preparado para el siguiente bloque.`)
+    addDelayedMessage(
+      'central',
+      `Perfecto cielo 💫 Ya te he dejado anotada la reserva con ${reservationReader}. Queda guardada en el sistema para que no se pierda tu cita.`,
+      1200,
+      'Central está escribiendo...'
+    )
+  }
+
+  const centralReplyForTopic = (topic) => {
+    if (topic === 'amor') {
+      return {
+        reader: 'Aurora',
+        text: 'Por lo que me estás contando, la energía se me va claramente a Aurora. Tiene una sensibilidad muy especial para amor, reconciliaciones y vínculos que todavía siguen moviéndose aunque haya distancia. Te la paso ahora mismo, cielo 💫'
+      }
+    }
+    if (topic === 'trabajo') {
+      return {
+        reader: 'María',
+        text: 'Para trabajo y estabilidad, la mejor vibración que tengo libre ahora mismo es la de María. Ella suele ver muy rápido bloqueos, cambios y oportunidades. Si te parece bien, te la paso ya mismo.'
+      }
+    }
+    if (topic === 'energia') {
+      return {
+        reader: 'Luna',
+        text: 'Aquí la energía me lleva mucho a Luna. Es muy buena leyendo caminos, intuición y cargas que se sienten pero no se terminan de entender. Voy a pasarte con ella.'
+      }
+    }
+    if (topic === 'decision') {
+      return {
+        reader: 'Sara',
+        text: 'Cuando hay dudas del corazón y una decisión importante encima, Sara suele dar mucha claridad. Te la paso ahora mismo para que no pierdas ese hilo que traes.'
+      }
+    }
+    if (topic === 'familia') {
+      return {
+        reader: 'María',
+        text: 'Para familia y emociones profundas, María conecta muy rápido. Voy a pasarte con ella para que puedas empezar a mirar esto con calma.'
+      }
+    }
+    return {
+      reader: 'Aurora',
+      text: 'Déjame sentir un momento tu energía, cielo... lo mejor es pasarte con una tarotista para que pueda empezar a abrir la consulta contigo con más calma. Voy a dejarte con Aurora.'
+    }
   }
 
   const handleCentralLogic = (text) => {
@@ -254,59 +382,86 @@ export default function ChatPage() {
 
     if (lower.includes('reserv')) {
       setReservationMode(true)
-      addCentralDelayed('Claro cielo 💫 te preparo la reserva. Elige tarotista, día y hora y te la dejo anotada.')
+      addDelayedMessage('central', 'Claro cielo 💫 Te preparo la reserva. Elige tarotista, día y hora y te la dejo anotada.', 1000, 'Central está escribiendo...')
       return
     }
 
     if (lower.includes('precio') || lower.includes('credit') || lower.includes('pagar') || lower.includes('comprar')) {
-      addCentralDelayed('Ahora mismo tienes 3 preguntas por 3€, 5 preguntas por 4,50€ y 10 preguntas por 7€. Si quieres, desde la derecha puedes ir directa a comprar créditos 💫')
+      addDelayedMessage(
+        'central',
+        'Ahora mismo tienes 3 preguntas por 3€, 5 preguntas por 4,50€ y 10 preguntas por 7€. Si sientes que quieres profundizar de verdad, desde la derecha puedes activar tus créditos y volver sin perder el hilo de la consulta 💫',
+        1300,
+        'Central está escribiendo...'
+      )
       return
     }
 
-    if (lower.includes('amor') || lower.includes('ex') || lower.includes('pareja') || lower.includes('volver') || lower.includes('relacion')) {
-      addCentralDelayed('Mira cielo, justo ahora tengo a Aurora libre y es de las mejores para amor, reconciliaciones y bloqueos sentimentales. Si quieres, te la paso ahora mismo para que aproveches tu consulta gratuita 💫')
-      queueTimeout(() => connectToReader('Aurora', 'amor'), 1700)
-      return
-    }
-
-    if (lower.includes('trabajo') || lower.includes('dinero') || lower.includes('econom')) {
-      addCentralDelayed('Para trabajo y estabilidad, María conecta muy rápido con este tipo de consultas. Si quieres, te la paso ahora mismo.')
-      queueTimeout(() => connectToReader('María', 'trabajo'), 1700)
-      return
-    }
-
-    if (lower.includes('energia') || lower.includes('espiritual') || lower.includes('camino')) {
-      addCentralDelayed('Para energía y caminos abiertos, Luna va muy bien. Si quieres, te la paso ahora mismo.')
-      queueTimeout(() => connectToReader('Luna', 'energia'), 1700)
-      return
-    }
-
-    if (lower.includes('duda') || lower.includes('decision') || lower.includes('decisión')) {
-      addCentralDelayed('Si estás entre dudas y decisiones, Sara suele dar muchísima claridad. Si te parece bien, te la paso ahora mismo.')
-      queueTimeout(() => connectToReader('Sara', 'decision'), 1700)
-      return
-    }
-
-    addCentralDelayed('Cuéntame con calma cielo, qué es lo que más te preocupa ahora mismo. Si me dices si es amor, trabajo, dinero, energía o dudas del corazón, te paso con la tarotista ideal 💫')
+    const topic = classifyTopic(text)
+    setCurrentTopic(topic)
+    const reply = centralReplyForTopic(topic)
+    createHumanTypingSequence('central', reply.text, 2400, 'Central está escribiendo...')
+    queueTimeout(() => connectToReader(reply.reader, topic), 2800)
   }
 
   const handleReaderLogic = async (text) => {
-    const allowed = await spendCreditIfNeeded()
-    if (!allowed) return
-
-    const readerName = activeReader || 'tu tarotista'
     const lower = normalizeText(text)
 
-    if (lower.includes('volver') || lower.includes('central')) {
-      backToCentral(`Ya estoy otra vez contigo cielo 💫 ${readerName} me dice que podéis seguir cuando quieras.`)
+    if (lower.includes('central') || lower.includes('volver')) {
+      backToCentral(`Ya estoy contigo otra vez, cielo 💫 ${activeReader} me deja contigo para que decidas si quieres seguir, comprar créditos o reservar.`)
       return
     }
 
-    addReaderDelayed(`Estoy mirando tu consulta, cielo. ${readerName} sigue conectando con tu energía para profundizar un poco más ✨`)
+    if (readerStage === 'intro') {
+      setReaderStage('details')
+      addDelayedMessage(
+        'reader',
+        `Claro cielo. Para empezar bien contigo, necesito que me digas tu signo y que me expliques un poquito mejor la situación que quieres mirar. Así entro mejor en tu energía.`,
+        2200,
+        `${activeReader} está escribiendo...`
+      )
+      return
+    }
+
+    if (!questionConsumed && isRealQuestion(text)) {
+      const allowed = await spendCreditIfNeeded()
+      if (!allowed) return
+
+      setQuestionConsumed(true)
+      setReaderStage('followup')
+
+      createHumanTypingSequence(
+        'reader',
+        `Estoy entrando en tu consulta, cielo... dame un momento porque quiero mirarlo con calma antes de decirte lo primero que me venga. Lo que siento de momento es que aquí hay movimiento, pero también bloqueo emocional y orgullo. No veo esto cerrado del todo.`,
+        5200,
+        `${activeReader} está escribiendo...`
+      )
+      return
+    }
+
+    if (readerStage === 'followup') {
+      setReaderStage('deeper')
+      addDelayedMessage(
+        'reader',
+        `Puedo seguir profundizando contigo, cielo, y aquí ya hay bastante más que mirar. Si quieres entrar más al detalle, seguimos y lo vemos con más profundidad.`,
+        2600,
+        `${activeReader} está escribiendo...`
+      )
+      return
+    }
+
+    const allowed = await spendCreditIfNeeded()
+    if (!allowed) return
+
+    createHumanTypingSequence(
+      'reader',
+      `Sigo contigo, cielo. Cuanto más me cuentas, más se mueve la lectura. Aquí todavía hay cosas importantes por abrir, así que si quieres seguimos profundizando despacito.`,
+      4200,
+      `${activeReader} está escribiendo...`
+    )
   }
 
   const handleSend = async () => {
-    if (!input.trim()) return
+    if (!input.trim() || mode === 'connecting') return
 
     const current = input.trim()
     pushMessage('client', current)
@@ -361,9 +516,9 @@ export default function ChatPage() {
   const offlineReaders = readers.filter((r) => r.status === 'Offline')
 
   return (
-    <main style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #f8f5ff, #fff8ef)', padding: 20, boxSizing: 'border-box' }}>
-      <div style={{ maxWidth: 1380, margin: '0 auto' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+    <main style={{ height: '100vh', overflow: 'hidden', background: 'linear-gradient(135deg, #f8f5ff, #fff8ef)', padding: 20, boxSizing: 'border-box' }}>
+      <div style={{ maxWidth: 1380, height: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18, flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <img src="/logo.png" alt="Tarot Celestial" style={{ width: 54, height: 54, objectFit: 'contain' }} />
             <div>
@@ -377,8 +532,8 @@ export default function ChatPage() {
           </button>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '280px minmax(0,1fr) 280px', gap: 18 }}>
-          <aside style={{ background: '#fff', borderRadius: 22, padding: 18, boxShadow: '0 12px 30px rgba(88, 41, 125, 0.08)', border: '1px solid #efe1bc' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '280px minmax(0,1fr) 280px', gap: 18, flex: 1, minHeight: 0 }}>
+          <aside style={{ background: '#fff', borderRadius: 22, padding: 18, boxShadow: '0 12px 30px rgba(88, 41, 125, 0.08)', border: '1px solid #efe1bc', overflowY: 'auto' }}>
             <h3 style={{ color: '#5b2c83', marginTop: 0 }}>Tarotistas en línea</h3>
             <div style={{ display: 'grid', gap: 10 }}>
               {onlineReaders.map((reader) => (
@@ -417,8 +572,8 @@ export default function ChatPage() {
             </div>
           </aside>
 
-          <section style={{ background: '#fff', borderRadius: 22, boxShadow: '0 12px 30px rgba(88, 41, 125, 0.08)', border: '1px solid #efe1bc', display: 'flex', flexDirection: 'column', minHeight: '78vh' }}>
-            <div style={{ padding: 18, borderBottom: '1px solid #f1e7cd' }}>
+          <section style={{ background: '#fff', borderRadius: 22, boxShadow: '0 12px 30px rgba(88, 41, 125, 0.08)', border: '1px solid #efe1bc', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+            <div style={{ padding: 18, borderBottom: '1px solid #f1e7cd', flexShrink: 0 }}>
               <div style={{ color: '#5b2c83', fontWeight: 800, fontSize: 20 }}>
                 {mode === 'reader' ? activeReader : mode === 'connecting' ? `Conectando con ${activeReader}...` : 'Central Tarot Celestial'}
               </div>
@@ -428,7 +583,7 @@ export default function ChatPage() {
             </div>
 
             {reservationMode && (
-              <div style={{ padding: 18, borderBottom: '1px solid #f1e7cd', background: '#fffaf1' }}>
+              <div style={{ padding: 18, borderBottom: '1px solid #f1e7cd', background: '#fffaf1', flexShrink: 0 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
                   <select value={reservationReader} onChange={(e) => setReservationReader(e.target.value)} style={{ padding: 12, borderRadius: 12, border: '1px solid #dccca4' }}>
                     <option value="">Tarotista</option>
@@ -454,7 +609,7 @@ export default function ChatPage() {
               </div>
             )}
 
-            <div ref={messagesRef} style={{ flex: 1, padding: 18, overflowY: 'auto', display: 'grid', gap: 12 }}>
+            <div ref={messagesRef} onScroll={onMessagesScroll} style={{ flex: 1, minHeight: 0, padding: 18, overflowY: 'auto', display: 'grid', gap: 12 }}>
               {mode === 'connecting' ? (
                 <div style={{ textAlign: 'center', color: '#8a6a2f', fontWeight: 700 }}>Un momento, cielo. Te estoy pasando con {activeReader}...</div>
               ) : (
@@ -472,7 +627,7 @@ export default function ChatPage() {
                         border: isClient ? 'none' : '1px solid #eadcf8'
                       }}>
                         {!isClient && <div style={{ fontSize: 12, fontWeight: 700, color: '#8a6a2f', marginBottom: 6 }}>{label}</div>}
-                        <div style={{ lineHeight: 1.5 }}>{message.text}</div>
+                        <div style={{ lineHeight: 1.6 }}>{message.text}</div>
                       </div>
                     </div>
                   )
@@ -482,13 +637,13 @@ export default function ChatPage() {
               {isTyping && (
                 <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
                   <div style={{ background: '#faf6ff', border: '1px solid #eadcf8', borderRadius: 18, padding: '12px 16px', color: '#7a6690' }}>
-                    {mode === 'reader' ? `${activeReader} está escribiendo...` : 'Central está escribiendo...'}
+                    {typingLabel}
                   </div>
                 </div>
               )}
             </div>
 
-            <div style={{ padding: 18, borderTop: '1px solid #f1e7cd', display: 'flex', gap: 12 }}>
+            <div style={{ padding: 18, borderTop: '1px solid #f1e7cd', display: 'flex', gap: 12, flexShrink: 0 }}>
               <input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -502,7 +657,7 @@ export default function ChatPage() {
             </div>
           </section>
 
-          <aside style={{ background: '#fff', borderRadius: 22, padding: 18, boxShadow: '0 12px 30px rgba(88, 41, 125, 0.08)', border: '1px solid #efe1bc' }}>
+          <aside style={{ background: '#fff', borderRadius: 22, padding: 18, boxShadow: '0 12px 30px rgba(88, 41, 125, 0.08)', border: '1px solid #efe1bc', overflowY: 'auto' }}>
             <h3 style={{ color: '#5b2c83', marginTop: 0 }}>Tus créditos</h3>
             <div style={{ padding: 16, borderRadius: 16, background: '#fffaf1', border: '1px solid #f0dfb2', marginBottom: 14 }}>
               <div style={{ color: '#8a6a2f', fontSize: 13 }}>Saldo actual</div>
@@ -540,7 +695,7 @@ export default function ChatPage() {
             <button
               onClick={() => {
                 setReservationMode(true)
-                if (mode !== 'central') backToCentral('Perfecto cielo 💫 te llevo al central para que te deje la reserva preparada.')
+                if (mode !== 'central') backToCentral('Perfecto cielo 💫 te llevo al central para dejarte la reserva preparada.')
               }}
               style={{ width: '100%', padding: '14px 16px', borderRadius: 14, border: '1px solid #dccca4', background: '#fff', color: '#6f3ea8', fontWeight: 800, cursor: 'pointer', marginBottom: 10 }}
             >
