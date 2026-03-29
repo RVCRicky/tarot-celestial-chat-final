@@ -1,5 +1,11 @@
 'use client'
 import { useState } from 'react'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+)
 
 const PACKS = [
   { id: 'pack_3', name: '3 preguntas', price: '3,00 €', description: 'Ideal para una consulta breve' },
@@ -14,21 +20,33 @@ export default function PaymentPage() {
     try {
       setLoadingPack(packId)
 
-      const res = await fetch('/api/stripe/create-checkout-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ packId })
-      })
+      // 🔥 OBTENER USUARIO ACTUAL
+      const { data } = await supabase.auth.getUser()
+      const userId = data?.user?.id
 
-      const data = await res.json()
-
-      if (!res.ok) {
-        alert(data.error || 'No se pudo iniciar el pago')
+      if (!userId) {
+        alert('Debes iniciar sesión antes de comprar')
         return
       }
 
-      if (data.url) {
-        window.location.href = data.url
+      const res = await fetch('/api/stripe/create-checkout-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          packId,
+          userId // 🔥 ENVIAMOS USER ID A STRIPE
+        })
+      })
+
+      const json = await res.json()
+
+      if (!res.ok) {
+        alert(json.error || 'No se pudo iniciar el pago')
+        return
+      }
+
+      if (json.url) {
+        window.location.href = json.url
       }
     } catch (error) {
       alert('Hubo un error al conectar con Stripe')
