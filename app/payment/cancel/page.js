@@ -21,7 +21,7 @@ export default function PaymentCancelPage() {
         <img src="/logo.png" alt="Tarot Celestial" style={{ width: 72, height: 72, objectFit: 'contain', marginBottom: 12 }} />
         <h1 style={{ color: '#5b2c83' }}>Pago cancelado</h1>
         <p style={{ color: '#7a6690', lineHeight: 1.7 }}>
-          No pasa nada, cielo. No se ha realizado ningún cobro. Puedes volver al chat cuando quieras y seguir con tu consulta.
+          No pasa nada, cielo. No se ha realizado ningún cobro.
         </p>
         <a href="/chat" style={{
           display: 'inline-block',

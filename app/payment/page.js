@@ -10,7 +10,7 @@ const supabase = createClient(
 const PACKS = [
   { id: 'pack_3', name: '3 preguntas', price: '3,00 €', description: 'Ideal para una consulta breve' },
   { id: 'pack_5', name: '5 preguntas', price: '4,50 €', description: 'La opción más equilibrada' },
-  { id: 'pack_10', name: '10 preguntas', price: '7,00 €', description: 'Para una consulta más profunda' }
+  { id: 'pack_10', name: '10 preguntas', price: '7,00 €', description: 'Para una consulta profunda' }
 ]
 
 export default function PaymentPage() {
@@ -19,8 +19,6 @@ export default function PaymentPage() {
   const handleCheckout = async (packId) => {
     try {
       setLoadingPack(packId)
-
-      // 🔥 OBTENER USUARIO ACTUAL
       const { data } = await supabase.auth.getUser()
       const userId = data?.user?.id
 
@@ -32,10 +30,7 @@ export default function PaymentPage() {
       const res = await fetch('/api/stripe/create-checkout-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          packId,
-          userId // 🔥 ENVIAMOS USER ID A STRIPE
-        })
+        body: JSON.stringify({ packId, userId })
       })
 
       const json = await res.json()

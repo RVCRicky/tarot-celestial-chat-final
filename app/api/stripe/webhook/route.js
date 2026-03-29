@@ -24,30 +24,25 @@ export async function POST(req) {
     return new Response(`Webhook error: ${err.message}`, { status: 400 })
   }
 
-  // 👉 CUANDO SE COMPLETA EL PAGO
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object
-
     const userId = session.metadata?.user_id
     const pack = session.metadata?.pack
 
     let credits = 0
-
     if (pack === 'pack_3') credits = 3
     if (pack === 'pack_5') credits = 5
     if (pack === 'pack_10') credits = 10
 
     if (userId) {
-      // guardar pago
       await supabase.from('payments').insert({
         user_id: userId,
         stripe_session_id: session.id,
         amount: session.amount_total,
-        credits: credits,
+        credits,
         status: 'completed'
       })
 
-      // sumar créditos
       const { data: profile } = await supabase
         .from('profiles')
         .select('credits')

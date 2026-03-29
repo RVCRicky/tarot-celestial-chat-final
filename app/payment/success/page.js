@@ -21,7 +21,7 @@ export default function PaymentSuccessPage() {
         <img src="/logo.png" alt="Tarot Celestial" style={{ width: 72, height: 72, objectFit: 'contain', marginBottom: 12 }} />
         <h1 style={{ color: '#5b2c83' }}>Pago realizado</h1>
         <p style={{ color: '#7a6690', lineHeight: 1.7 }}>
-          Perfecto cielo, el pago se ha completado correctamente. En el siguiente paso conectaremos esta pantalla con tus créditos para que vuelvas al chat automáticamente con tu saldo actualizado.
+          Perfecto cielo, el pago se ha completado correctamente. Tus créditos ya deberían estar actualizados.
         </p>
         <a href="/chat" style={{
           display: 'inline-block',
