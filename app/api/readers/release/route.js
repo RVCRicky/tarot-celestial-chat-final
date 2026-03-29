@@ -1,4 +1,4 @@
-import { getServiceSupabase } from '../../../lib/serverSupabase'
+import { getServiceSupabase } from '../../../../lib/serverSupabase'
 import { READERS, currentShift } from '../../../../lib/chatShared'
 
 export async function POST(req) {
