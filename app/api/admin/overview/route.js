@@ -1,4 +1,4 @@
-import { getServiceSupabase } from '../../../lib/serverSupabase'
+import { getServiceSupabase } from '../../../../lib/serverSupabase'
 
 export async function GET() {
   const supabase = getServiceSupabase()
