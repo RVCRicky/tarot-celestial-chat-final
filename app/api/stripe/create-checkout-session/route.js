@@ -38,23 +38,31 @@ export async function POST(request) {
     const origin = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
     const session = await stripe.checkout.sessions.create({
-      mode: 'payment',
-      payment_method_types: ['card'],
-      line_items: [
-        {
-          price_data: {
-            currency: 'eur',
-            product_data: {
-              name: pack.name
-            },
-            unit_amount: pack.amount
-          },
-          quantity: 1
-        }
-      ],
-      success_url: `${origin}/payment/success`,
-      cancel_url: `${origin}/payment/cancel`
-    })
+  mode: 'payment',
+  payment_method_types: ['card'],
+
+  line_items: [
+    {
+      price_data: {
+        currency: 'eur',
+        product_data: {
+          name: pack.name
+        },
+        unit_amount: pack.amount
+      },
+      quantity: 1
+    }
+  ],
+
+  // 🔥 AQUÍ ESTÁ LA CLAVE
+  metadata: {
+    user_id: body.userId,
+    pack: body.packId
+  },
+
+  success_url: `${origin}/payment/success`,
+  cancel_url: `${origin}/payment/cancel`
+})
 
     return Response.json({ url: session.url })
   } catch (error) {
