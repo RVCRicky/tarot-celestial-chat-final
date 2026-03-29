@@ -2,16 +2,21 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 
+const READERS = [
+  { name: 'Aurora', specialty: 'Amor', status: 'Libre' },
+  { name: 'María', specialty: 'Trabajo', status: 'Libre' },
+  { name: 'Sara', specialty: 'Decisiones', status: 'Libre' },
+  { name: 'Luna', specialty: 'Energía', status: 'Libre' }
+]
+
 export default function ChatPage() {
   const [profile, setProfile] = useState(null)
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [credits, setCredits] = useState(0)
-  const [freeQuestionUsed, setFreeQuestionUsed] = useState(false)
-  const [loading, setLoading] = useState(true)
-
-  const [mode, setMode] = useState('central') // central | reader
+  const [mode, setMode] = useState('central')
   const [activeReader, setActiveReader] = useState(null)
+  const [readers, setReaders] = useState(READERS)
 
   useEffect(() => {
     const init = async () => {
@@ -26,11 +31,7 @@ export default function ChatPage() {
       setProfile(profileData)
       setCredits(profileData.credits || 0)
 
-      addMessage('central',
-        `Hola ${profileData.display_name}, bienvenida de nuevo a Tarot Celestial 💫 Cuéntame qué te preocupa y te ayudo a verlo claro.`
-      )
-
-      setLoading(false)
+      addMessage('central', `Hola ${profileData.display_name}, dime qué necesitas cielo 💫`)
     }
 
     init()
@@ -40,99 +41,86 @@ export default function ChatPage() {
     setMessages(prev => [...prev, { sender, text }])
   }
 
-  const connectToReader = (name) => {
+  const connectReader = (name) => {
     setMode('connecting')
     setActiveReader(name)
 
+    setReaders(prev =>
+      prev.map(r => r.name === name ? { ...r, status: 'Ocupada' } : r)
+    )
+
     setTimeout(() => {
       setMode('reader')
-      setMessages([
-        {
-          sender: 'reader',
-          text: `Hola cielo, soy ${name} de Tarot Celestial ✨ Estoy contigo, cuéntame qué necesitas.`
-        }
-      ])
-    }, 1500)
+      setMessages([{ sender: 'reader', text: `Hola cielo, soy ${name} ✨` }])
+    }, 1200)
   }
 
-  const centralResponse = (text) => {
-    const t = text.toLowerCase()
+  const backToCentral = () => {
+    setMode('central')
+    setActiveReader(null)
 
-    if (t.includes('amor') || t.includes('ex') || t.includes('pareja')) {
-      connectToReader('Aurora')
-      return "Te paso con Aurora ahora mismo cielo 💫"
-    }
+    setReaders(prev =>
+      prev.map(r => ({ ...r, status: 'Libre' }))
+    )
 
-    return "Cuéntame un poquito más cielo 💫"
+    addMessage('central', 'Ya estoy contigo otra vez cielo 💫')
   }
 
-  const handleSend = async () => {
+  const handleSend = () => {
     if (!input.trim()) return
 
-    const text = input.trim()
-    addMessage('client', text)
+    const t = input.toLowerCase()
+    addMessage('client', input)
     setInput('')
 
     if (mode === 'central') {
-
-      if (!freeQuestionUsed) {
-        setFreeQuestionUsed(true)
+      if (t.includes('amor')) {
+        connectReader('Aurora')
+        addMessage('central', 'Te paso con Aurora 💫')
       } else {
-        if (credits <= 0) {
-          addMessage('central', "Necesitas créditos para continuar.")
-          return
-        }
-
-        const { data: auth } = await supabase.auth.getUser()
-
-        const { data: current } = await supabase
-          .from('profiles')
-          .select('credits')
-          .eq('auth_user_id', auth.user.id)
-          .single()
-
-        const newCredits = (current?.credits || 0) - 1
-
-        await supabase
-          .from('profiles')
-          .update({ credits: newCredits })
-          .eq('auth_user_id', auth.user.id)
-
-        setCredits(newCredits)
+        addMessage('central', 'Cuéntame más cielo 💫')
       }
-
-      const response = centralResponse(text)
-      addMessage('central', response)
-    }
-
-    if (mode === 'reader') {
-      addMessage('reader', "Estoy viendo tu consulta cielo ✨")
+    } else {
+      addMessage('reader', 'Estoy viendo tu consulta ✨')
     }
   }
 
-  if (loading) return <div>Cargando...</div>
-
   return (
-    <div style={{ padding: 20 }}>
-      <h2>{mode === 'reader' ? activeReader : 'Central Tarot'}</h2>
-      <p>Créditos: {credits}</p>
-
-      {mode === 'connecting' && <p>Conectando con {activeReader}...</p>}
-
-      <div style={{ minHeight: 300, border: '1px solid #ccc', padding: 10 }}>
-        {messages.map((m, i) => (
-          <div key={i}>
-            <strong>{m.sender}:</strong> {m.text}
+    <div style={{ display: 'flex', gap: 20, padding: 20 }}>
+      <div>
+        <h3>Tarotistas</h3>
+        {readers.map(r => (
+          <div key={r.name} style={{ marginBottom: 10 }}>
+            {r.name} - {r.status}
+            {r.status === 'Libre' && (
+              <button onClick={() => connectReader(r.name)}>Entrar</button>
+            )}
           </div>
         ))}
+        <button onClick={backToCentral}>Volver central</button>
       </div>
 
-      <input
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-      />
-      <button onClick={handleSend}>Enviar</button>
+      <div style={{ flex: 1 }}>
+        <h2>{mode === 'reader' ? activeReader : 'Central'}</h2>
+        <p>Créditos: {credits}</p>
+
+        {mode === 'connecting' && <p>Conectando...</p>}
+
+        <div style={{ border: '1px solid #ccc', minHeight: 300, padding: 10 }}>
+          {messages.map((m, i) => (
+            <div key={i}>
+              <strong>{m.sender}:</strong> {m.text}
+            </div>
+          ))}
+        </div>
+
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+        />
+        <button onClick={handleSend}>Enviar</button>
+      </div>
     </div>
   )
 }
