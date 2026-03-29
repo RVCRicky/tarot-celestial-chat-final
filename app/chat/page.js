@@ -31,6 +31,8 @@ export default function ChatPage() {
   const [messages, setMessages] = useState([])
   const [hasAskedTopic, setHasAskedTopic] = useState(false)
   const messagesEndRef = useRef(null)
+  const [credits, setCredits] = useState(0)
+  const [freeQuestionUsed, setFreeQuestionUsed] = useState(false)
 
   useEffect(() => {
     const init = async () => {
@@ -55,6 +57,7 @@ export default function ChatPage() {
         setStep('askData')
       } else {
         setProfile(profileData)
+        setCredits(profileData.credits || 0)
         setStep('chat')
         addDelayedCentralMessage(
           `Hola ${profileData.display_name}, bienvenida de nuevo a Tarot Celestial. Estoy aquí contigo, cielo. ¿Sobre qué tema te gustaría consultar hoy?`
@@ -116,6 +119,29 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, { sender: 'client', text: currentInput }])
     setInput('')
 
+    // 🔥 CONTROL DE CRÉDITOS
+
+if (hasAskedTopic) {
+
+  // primera consulta gratis
+  if (!freeQuestionUsed) {
+    setFreeQuestionUsed(true)
+  } else {
+
+    // sin créditos → bloquear
+    if (credits <= 0) {
+      addDelayedCentralMessage(
+        'Cielo, para continuar con la consulta necesito activarte créditos. Te paso con el central para que puedas seguir.',
+        1500
+      )
+      return
+    }
+
+    // restar crédito
+    setCredits(prev => prev - 1)
+  }
+}
+    
     if (!hasAskedTopic) {
       addDelayedCentralMessage(
         `Cuéntame cielo, ¿qué deseas consultar hoy? Amor, trabajo, familia o energía.`
@@ -316,7 +342,9 @@ export default function ChatPage() {
             <h3 style={{ color: '#5b2c83', marginTop: 0 }}>Tus créditos</h3>
             <div style={{ padding: 16, borderRadius: 16, background: '#fffaf1', border: '1px solid #f0dfb2', marginBottom: 14 }}>
               <div style={{ color: '#8a6a2f', fontSize: 13 }}>Saldo actual</div>
-              <div style={{ color: '#5b2c83', fontSize: 30, fontWeight: 800, marginTop: 4 }}>1</div>
+              <div style={{ color: '#5b2c83', fontSize: 30, fontWeight: 800, marginTop: 4 }}>
+  {credits}
+</div>
               <div style={{ color: '#8c7a58', fontSize: 13 }}>Incluye tu primera consulta gratuita</div>
             </div>
 
