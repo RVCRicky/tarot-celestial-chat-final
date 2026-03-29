@@ -1,4 +1,4 @@
-import { getServiceSupabase } from '../../../../lib/serverSupabase'
+import { getServiceSupabase } from '../../../lib/serverSupabase'
 
 async function sendReservationEmail({ email, displayName, readerName, reservedFor }) {
   const apiKey = process.env.RESEND_API_KEY
