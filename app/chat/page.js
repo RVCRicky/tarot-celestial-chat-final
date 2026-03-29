@@ -1,4 +1,3 @@
-
 'use client'
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
@@ -10,6 +9,9 @@ export default function ChatPage() {
   const [credits, setCredits] = useState(0)
   const [freeQuestionUsed, setFreeQuestionUsed] = useState(false)
   const [loading, setLoading] = useState(true)
+
+  const [mode, setMode] = useState('central') // central | reader
+  const [activeReader, setActiveReader] = useState(null)
 
   useEffect(() => {
     const init = async () => {
@@ -25,7 +27,7 @@ export default function ChatPage() {
       setCredits(profileData.credits || 0)
 
       addMessage('central',
-        `Hola ${profileData.display_name}, bienvenida de nuevo a Tarot Celestial 💫 Estoy aquí contigo cielo, cuéntame qué te preocupa y te ayudo a verlo claro.`
+        `Hola ${profileData.display_name}, bienvenida de nuevo a Tarot Celestial 💫 Cuéntame qué te preocupa y te ayudo a verlo claro.`
       )
 
       setLoading(false)
@@ -38,18 +40,30 @@ export default function ChatPage() {
     setMessages(prev => [...prev, { sender, text }])
   }
 
+  const connectToReader = (name) => {
+    setMode('connecting')
+    setActiveReader(name)
+
+    setTimeout(() => {
+      setMode('reader')
+      setMessages([
+        {
+          sender: 'reader',
+          text: `Hola cielo, soy ${name} de Tarot Celestial ✨ Estoy contigo, cuéntame qué necesitas.`
+        }
+      ])
+    }, 1500)
+  }
+
   const centralResponse = (text) => {
     const t = text.toLowerCase()
 
     if (t.includes('amor') || t.includes('ex') || t.includes('pareja')) {
-      return "Mira cielo, justo ahora tengo a Aurora libre y es de las mejores en temas de amor, vidente natural y medium 💫 Si quieres te la paso ahora mismo para que aproveches tu consulta gratuita."
+      connectToReader('Aurora')
+      return "Te paso con Aurora ahora mismo cielo 💫"
     }
 
-    if (t.includes('trabajo') || t.includes('dinero')) {
-      return "Para temas de trabajo cielo, ahora mismo María está conectada y conecta muy rápido con la energía laboral. Si quieres te paso con ella."
-    }
-
-    return "Cuéntame con calma cielo, ¿qué es lo que más te preocupa ahora mismo? Estoy aquí para ayudarte 💫"
+    return "Cuéntame un poquito más cielo 💫"
   }
 
   const handleSend = async () => {
@@ -59,45 +73,51 @@ export default function ChatPage() {
     addMessage('client', text)
     setInput('')
 
-    // CONTROL CRÉDITOS
-    if (!freeQuestionUsed) {
-      setFreeQuestionUsed(true)
-    } else {
-      if (credits <= 0) {
-        addMessage('central',
-          "Cielo, para poder seguir con la consulta necesito activarte créditos. Puedes comprarlos ahora y seguimos justo donde lo dejamos 💫"
-        )
-        return
+    if (mode === 'central') {
+
+      if (!freeQuestionUsed) {
+        setFreeQuestionUsed(true)
+      } else {
+        if (credits <= 0) {
+          addMessage('central', "Necesitas créditos para continuar.")
+          return
+        }
+
+        const { data: auth } = await supabase.auth.getUser()
+
+        const { data: current } = await supabase
+          .from('profiles')
+          .select('credits')
+          .eq('auth_user_id', auth.user.id)
+          .single()
+
+        const newCredits = (current?.credits || 0) - 1
+
+        await supabase
+          .from('profiles')
+          .update({ credits: newCredits })
+          .eq('auth_user_id', auth.user.id)
+
+        setCredits(newCredits)
       }
 
-      const { data: auth } = await supabase.auth.getUser()
-
-      const { data: current } = await supabase
-        .from('profiles')
-        .select('credits')
-        .eq('auth_user_id', auth.user.id)
-        .single()
-
-      const newCredits = (current?.credits || 0) - 1
-
-      await supabase
-        .from('profiles')
-        .update({ credits: newCredits })
-        .eq('auth_user_id', auth.user.id)
-
-      setCredits(newCredits)
+      const response = centralResponse(text)
+      addMessage('central', response)
     }
 
-    const response = centralResponse(text)
-    addMessage('central', response)
+    if (mode === 'reader') {
+      addMessage('reader', "Estoy viendo tu consulta cielo ✨")
+    }
   }
 
   if (loading) return <div>Cargando...</div>
 
   return (
     <div style={{ padding: 20 }}>
-      <h2>Chat Tarot</h2>
+      <h2>{mode === 'reader' ? activeReader : 'Central Tarot'}</h2>
       <p>Créditos: {credits}</p>
+
+      {mode === 'connecting' && <p>Conectando con {activeReader}...</p>}
 
       <div style={{ minHeight: 300, border: '1px solid #ccc', padding: 10 }}>
         {messages.map((m, i) => (
@@ -116,3 +136,4 @@ export default function ChatPage() {
     </div>
   )
 }
+
