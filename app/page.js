@@ -11,15 +11,15 @@ export default function HomePage() {
     }}>
       <div style={{
         width: '100%',
-        maxWidth: 860,
+        maxWidth: 900,
         background: '#fff',
         borderRadius: 28,
         border: '1px solid #efe1bc',
         boxShadow: '0 20px 60px rgba(88, 41, 125, 0.12)',
-        padding: 40,
+        padding: 42,
         textAlign: 'center'
       }}>
-        <img src="/logo.png" alt="Tarot Celestial" style={{ width: 110, height: 110, objectFit: 'contain' }} />
+        <img src="/logo.png" alt="Tarot Celestial" style={{ width: 112, height: 112, objectFit: 'contain' }} />
         <h1 style={{ color: '#5b2c83', fontSize: 38, marginBottom: 10 }}>
           Bienvenido al chat de Tarot Celestial
         </h1>
@@ -60,8 +60,8 @@ export default function HomePage() {
           color: '#6d5832',
           lineHeight: 1.7
         }}>
-          Consulta gratis al entrar, central humano con recomendaciones, tarotistas por turnos,
-          compra de créditos con Stripe y continuidad de la consulta desde el chat.
+          Entra, habla primero con el central, elige tarotista, disfruta de tu consulta gratis
+          y continúa con créditos cuando quieras profundizar un poco más.
         </div>
       </div>
     </main>

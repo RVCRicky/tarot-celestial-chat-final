@@ -39,7 +39,7 @@ export async function POST(req) {
         user_id: userId,
         stripe_session_id: session.id,
         amount: session.amount_total,
-        credits,
+        credits: credits,
         status: 'completed'
       })
 

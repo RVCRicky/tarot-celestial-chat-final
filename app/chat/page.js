@@ -1,88 +1,18 @@
 'use client'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
-
-const ALL_READERS = [
-  { name: 'Aurora', specialty: 'Amor y reconciliaciones', turn: 'morning', greeting: 'Hola cielo, soy Aurora de Tarot Celestial. Estoy aquí contigo para mirar tu situación con calma y con el corazón abierto.' },
-  { name: 'María', specialty: 'Trabajo y estabilidad', turn: 'morning', greeting: 'Hola corazón, soy María. Respira hondo y cuéntame qué te preocupa, voy a mirar tu energía despacito.' },
-  { name: 'Luna', specialty: 'Energía y caminos', turn: 'morning', greeting: 'Hola cielo, soy Luna. Vamos a mirar qué caminos tienes abiertos y qué energía te está rodeando.' },
-  { name: 'Sara', specialty: 'Decisiones sentimentales', turn: 'morning', greeting: 'Hola bonita, soy Sara. Estoy contigo para ayudarte a ver esto con claridad y serenidad.' },
-  { name: 'Candela', specialty: 'Rupturas y regresos', turn: 'afternoon', greeting: 'Hola cielo, soy Candela. Vamos a mirar con calma lo que está pasando en tu vínculo.' },
-  { name: 'Noa', specialty: 'Destino y crecimiento', turn: 'afternoon', greeting: 'Hola corazón, soy Noa. Cuéntame lo que sientes y lo vamos viendo paso a paso.' },
-  { name: 'Violeta', specialty: 'Alma gemela', turn: 'afternoon', greeting: 'Hola cielo, soy Violeta. Estoy aquí para mirar lo que te une a esa persona.' },
-  { name: 'Rocío', specialty: 'Celos e infidelidad', turn: 'afternoon', greeting: 'Hola bonita, soy Rocío. Voy a mirar con sinceridad esta situación para darte claridad.' },
-  { name: 'Alma', specialty: 'Espiritualidad', turn: 'night', greeting: 'Hola cielo, soy Alma. Respira y cuéntame despacito qué necesitas mirar hoy.' },
-  { name: 'Nerea', specialty: 'Respuestas rápidas', turn: 'night', greeting: 'Hola corazón, soy Nerea. Dime tu consulta y voy directa a lo importante.' },
-  { name: 'Mara', specialty: 'Medium', turn: 'night', greeting: 'Hola cielo, soy Mara. Voy a acompañarte para mirar esto con profundidad.' },
-  { name: 'Estela', specialty: 'Dinero y prosperidad', turn: 'night', greeting: 'Hola bonita, soy Estela. Cuéntame qué te preocupa y lo vemos con claridad.' }
-]
-
-function normalizeText(value) {
-  return (value || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .trim()
-}
-
-function getCurrentShift() {
-  const hour = new Date().getHours()
-  if (hour >= 6 && hour < 14) return 'morning'
-  if (hour >= 14 && hour < 22) return 'afternoon'
-  return 'night'
-}
-
-function buildReaders(activeReaderName) {
-  const currentShift = getCurrentShift()
-  return ALL_READERS.map((reader) => {
-    if (reader.turn !== currentShift) {
-      return { ...reader, status: 'Offline' }
-    }
-    if (activeReaderName && activeReaderName === reader.name) {
-      return { ...reader, status: 'Ocupada' }
-    }
-    return { ...reader, status: 'Libre' }
-  })
-}
-
-function classifyTopic(text) {
-  const lower = normalizeText(text)
-  if (lower.includes('amor') || lower.includes('ex') || lower.includes('pareja') || lower.includes('volver') || lower.includes('relacion')) return 'amor'
-  if (lower.includes('trabajo') || lower.includes('dinero') || lower.includes('econom')) return 'trabajo'
-  if (lower.includes('energia') || lower.includes('espiritual') || lower.includes('camino')) return 'energia'
-  if (lower.includes('familia') || lower.includes('hijo') || lower.includes('madre') || lower.includes('padre')) return 'familia'
-  if (lower.includes('duda') || lower.includes('decision')) return 'decision'
-  return 'general'
-}
-
-function isRealQuestion(text) {
-  const lower = normalizeText(text)
-  if (!lower) return false
-  const ignored = [
-    'hola', 'buenas', 'vale', 'ok', 'gracias', 'perfecto', 'si', 'sí',
-    'soy piscis', 'soy aries', 'soy tauro', 'soy geminis', 'soy cáncer',
-    'soy cancer', 'soy leo', 'soy virgo', 'soy libra', 'soy escorpio',
-    'soy sagitario', 'soy capricornio', 'soy acuario'
-  ]
-  if (ignored.includes(lower)) return false
-  if (lower.length < 8) return false
-  return (
-    lower.includes('?') ||
-    lower.includes('quiero saber') ||
-    lower.includes('me gustaria saber') ||
-    lower.includes('me gustaría saber') ||
-    lower.includes('va a volver') ||
-    lower.includes('volvera') ||
-    lower.includes('volverá') ||
-    lower.includes('esta con') ||
-    lower.includes('está con') ||
-    lower.includes('que siente') ||
-    lower.includes('qué siente') ||
-    lower.includes('como me ira') ||
-    lower.includes('cómo me irá') ||
-    lower.includes('quiero consultar')
-  )
-}
+import {
+  READER_CATALOG,
+  getReadersForUI,
+  detectTopic,
+  findRecommendedReader,
+  getPricePackForCountry,
+  extractPersonName,
+  extractZodiac,
+  isRealQuestion,
+  isFollowupQuestion,
+  normalizeText
+} from '../../lib/chatConfig'
 
 export default function ChatPage() {
   const [loading, setLoading] = useState(true)
@@ -105,12 +35,19 @@ export default function ChatPage() {
   const [reservationNote, setReservationNote] = useState('')
   const [currentTopic, setCurrentTopic] = useState('general')
   const [readerStage, setReaderStage] = useState('intro')
-  const [questionConsumed, setQuestionConsumed] = useState(false)
+  const [mainQuestionCharged, setMainQuestionCharged] = useState(false)
+  const [followupUsed, setFollowupUsed] = useState(false)
+  const [contextMemory, setContextMemory] = useState({
+    targetName: '',
+    userSign: '',
+    targetSign: '',
+    lastReader: ''
+  })
   const messagesRef = useRef(null)
-  const timeoutRef = useRef([])
   const scrollLockRef = useRef(true)
+  const timeoutRef = useRef([])
 
-  const readers = useMemo(() => buildReaders(activeReader), [activeReader])
+  const readers = useMemo(() => getReadersForUI(activeReader), [activeReader])
 
   useEffect(() => {
     const init = async () => {
@@ -132,18 +69,33 @@ export default function ChatPage() {
         .eq('auth_user_id', authData.user.id)
         .maybeSingle()
 
+      const paymentSuccess = typeof window !== 'undefined' ? window.localStorage.getItem('tc_payment_success') : null
+      const lastReader = typeof window !== 'undefined' ? window.localStorage.getItem('tc_last_reader') : null
+
       if (!profileData) {
         setStep('askData')
       } else {
         setProfile(profileData)
         setCredits(profileData.credits || 0)
+        setFreeQuestionUsed(profileData.free_question_used || false)
         setStep('chat')
-        addDelayedMessage(
-          'central',
-          `Hola ${profileData.display_name}, bienvenida de nuevo a Tarot Celestial 💫 Estoy aquí contigo. Cuéntame con calma qué te preocupa en este momento y te ayudaré a elegir la mejor energía para tu consulta.`,
-          1100,
-          'Central está escribiendo...'
-        )
+
+        if (paymentSuccess === '1') {
+          if (typeof window !== 'undefined') window.localStorage.removeItem('tc_payment_success')
+          addDelayedMessage(
+            'central',
+            `Perfecto ${profileData.display_name}, ya veo que has realizado el pago y tus créditos están asignados. ${lastReader ? `¿Quieres seguir hablando con ${lastReader} o prefieres probar a otra de nuestras chicas?` : '¿Quieres continuar con tu consulta?'}`,
+            1200,
+            'Central está escribiendo...'
+          )
+        } else {
+          addDelayedMessage(
+            'central',
+            `Hola ${profileData.display_name}, bienvenida de nuevo a Tarot Celestial. Estoy aquí contigo, cielo. ¿En qué te puedo ayudar hoy?`,
+            1000,
+            'Central está escribiendo...'
+          )
+        }
       }
 
       setLoading(false)
@@ -189,13 +141,16 @@ export default function ChatPage() {
   const createHumanTypingSequence = (sender, text, totalDelay, label) => {
     setTypingLabel(label)
     setIsTyping(true)
+
     queueTimeout(() => {
       setIsTyping(false)
     }, Math.max(500, totalDelay * 0.35))
+
     queueTimeout(() => {
       setTypingLabel(label)
       setIsTyping(true)
-    }, Math.max(900, totalDelay * 0.55))
+    }, Math.max(900, totalDelay * 0.58))
+
     queueTimeout(() => {
       pushMessage(sender, text)
       setIsTyping(false)
@@ -214,7 +169,8 @@ export default function ChatPage() {
       auth_user_id: authData.user.id,
       display_name: name.trim(),
       country: country.trim(),
-      credits: 0
+      credits: 0,
+      free_question_used: false
     }
 
     const { error } = await supabase.from('profiles').insert(newProfile)
@@ -226,62 +182,70 @@ export default function ChatPage() {
 
     setProfile(newProfile)
     setCredits(0)
+    setFreeQuestionUsed(false)
     setStep('chat')
     addDelayedMessage(
       'central',
-      `Perfecto ${name.trim()}, como es tu primera vez en Tarot Celestial tienes una consulta gratis. Cuéntame el tema que quieres mirar y te recomendaré a la tarotista ideal para ti.`,
+      `Perfecto ${name.trim()}, como es la primera vez que nos escribes tienes una consulta completamente gratis. Si me dices sobre qué tema quieres consultar, te recomiendo a la mejor tarotista.`,
       1200,
       'Central está escribiendo...'
     )
   }
 
   const connectToReader = (readerName, topic = 'general') => {
-    const reader = ALL_READERS.find((item) => item.name === readerName)
+    const reader = READER_CATALOG.find((item) => item.name === readerName)
     if (!reader) return
+
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('tc_last_reader', readerName)
+    }
 
     setMode('connecting')
     setActiveReader(readerName)
     setCurrentTopic(topic)
-    setQuestionConsumed(false)
+    setMainQuestionCharged(false)
+    setFollowupUsed(false)
     setReaderStage('intro')
     setInput('')
+    setContextMemory((prev) => ({ ...prev, lastReader: readerName }))
 
     queueTimeout(() => {
       setMode('reader')
       setMessages([{ sender: 'reader', text: reader.greeting }])
-    }, 1800)
+    }, 1900)
   }
 
   const backToCentral = (customMessage) => {
     setMode('central')
-    setActiveReader(null)
     setMessages([])
     setInput('')
-    setQuestionConsumed(false)
+    setActiveReader(null)
     setReaderStage('intro')
+    setMainQuestionCharged(false)
+    setFollowupUsed(false)
     addDelayedMessage(
       'central',
-      customMessage || `Ya estoy contigo otra vez, cielo 💫 Dime si quieres seguir con tu consulta, activar créditos o dejar una reserva preparada.`,
-      1000,
+      customMessage || `Hola ${profile?.display_name || 'cielo'}, ya estoy otra vez contigo en central. Dime qué necesitas y te ayudo encantado.`,
+      900,
       'Central está escribiendo...'
     )
   }
 
-  const spendCreditIfNeeded = async () => {
+  const spendMainQuestion = async () => {
     if (!freeQuestionUsed) {
+      const { data: auth } = await supabase.auth.getUser()
+
+      await supabase
+        .from('profiles')
+        .update({ free_question_used: true })
+        .eq('auth_user_id', auth.user.id)
+
       setFreeQuestionUsed(true)
       return true
     }
 
     if (credits <= 0) {
-      setMode('central')
-      setActiveReader(null)
-      addDelayedMessage(
-        'central',
-        'Cielo, para seguir profundizando contigo necesito activarte créditos. Cuando quieras puedes comprarlos desde la derecha y seguimos justo donde lo hemos dejado 💫',
-        1100,
-        'Central está escribiendo...'
-      )
+      backToCentral(`Cielo, estoy encantada de poder seguir contigo, pero para continuar la consulta necesito que el central te active créditos. En cuanto quieras, te los preparo.`)
       return false
     }
 
@@ -309,21 +273,26 @@ export default function ChatPage() {
       return
     }
 
-    let reservedFor = null
-    try {
-      reservedFor = new Date(`${reservationDay}T${reservationTime}:00`).toISOString()
-    } catch (e) {
-      reservedFor = null
-    }
+    const reservedFor = new Date(`${reservationDay}T${reservationTime}:00`).toISOString()
 
-    if (reservedFor) {
-      await supabase.from('reservations').insert({
-        profile_id: profile?.id,
-        reader_name: reservationReader,
-        reserved_for: reservedFor,
-        status: 'confirmed',
-        notes: reservationNote
+    const res = await fetch('/api/reservations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        profileId: profile?.id,
+        readerName: reservationReader,
+        reservedFor,
+        notes: reservationNote,
+        email: profile?.email || null,
+        displayName: profile?.display_name || null
       })
+    })
+
+    const json = await res.json()
+
+    if (!res.ok) {
+      alert(json.error || 'No se pudo crear la reserva')
+      return
     }
 
     setReservationMode(false)
@@ -334,146 +303,227 @@ export default function ChatPage() {
 
     addDelayedMessage(
       'central',
-      `Perfecto cielo 💫 Ya te he dejado anotada la reserva con ${reservationReader}. Queda guardada en el sistema para que no se pierda tu cita.`,
+      `Perfecto cielo 💫 Te he dejado la reserva preparada con ${reservationReader}. ${json.emailSent ? 'Además, te llegará un email de confirmación.' : 'La reserva queda guardada ya mismo en el sistema.'}`,
+      1000,
+      'Central está escribiendo...'
+    )
+  }
+
+  const answerPriceQuestion = () => {
+    const priceInfo = getPricePackForCountry(profile?.country || country || '')
+    addDelayedMessage(
+      'central',
+      `Claro cielo, ahora mismo para ${profile?.country || 'tu país'} estoy trabajando con estas ofertas: 3 preguntas por ${priceInfo.p3}, 5 preguntas por ${priceInfo.p5} y 10 preguntas por ${priceInfo.p10}. Tú me dices cuál deseas adquirir y te paso a la pasarela de pago.`,
       1200,
       'Central está escribiendo...'
     )
   }
 
-  const centralReplyForTopic = (topic) => {
-    if (topic === 'amor') {
-      return {
-        reader: 'Aurora',
-        text: 'Por lo que me estás contando, la energía se me va claramente a Aurora. Tiene una sensibilidad muy especial para amor, reconciliaciones y vínculos que todavía siguen moviéndose aunque haya distancia. Te la paso ahora mismo, cielo 💫'
-      }
-    }
-    if (topic === 'trabajo') {
-      return {
-        reader: 'María',
-        text: 'Para trabajo y estabilidad, la mejor vibración que tengo libre ahora mismo es la de María. Ella suele ver muy rápido bloqueos, cambios y oportunidades. Si te parece bien, te la paso ya mismo.'
-      }
-    }
-    if (topic === 'energia') {
-      return {
-        reader: 'Luna',
-        text: 'Aquí la energía me lleva mucho a Luna. Es muy buena leyendo caminos, intuición y cargas que se sienten pero no se terminan de entender. Voy a pasarte con ella.'
-      }
-    }
-    if (topic === 'decision') {
-      return {
-        reader: 'Sara',
-        text: 'Cuando hay dudas del corazón y una decisión importante encima, Sara suele dar mucha claridad. Te la paso ahora mismo para que no pierdas ese hilo que traes.'
-      }
-    }
-    if (topic === 'familia') {
-      return {
-        reader: 'María',
-        text: 'Para familia y emociones profundas, María conecta muy rápido. Voy a pasarte con ella para que puedas empezar a mirar esto con calma.'
-      }
-    }
-    return {
-      reader: 'Aurora',
-      text: 'Déjame sentir un momento tu energía, cielo... lo mejor es pasarte con una tarotista para que pueda empezar a abrir la consulta contigo con más calma. Voy a dejarte con Aurora.'
-    }
-  }
+  const answerBestReaderQuestion = () => {
+    const available = readers.filter((r) => r.status === 'Libre')
+    const best = available[0] || null
 
-  const handleCentralLogic = (text) => {
-    const lower = normalizeText(text)
-
-    if (lower.includes('reserv')) {
-      setReservationMode(true)
-      addDelayedMessage('central', 'Claro cielo 💫 Te preparo la reserva. Elige tarotista, día y hora y te la dejo anotada.', 1000, 'Central está escribiendo...')
-      return
-    }
-
-    if (lower.includes('precio') || lower.includes('credit') || lower.includes('pagar') || lower.includes('comprar')) {
+    if (!best) {
       addDelayedMessage(
         'central',
-        'Ahora mismo tienes 3 preguntas por 3€, 5 preguntas por 4,50€ y 10 preguntas por 7€. Si sientes que quieres profundizar de verdad, desde la derecha puedes activar tus créditos y volver sin perder el hilo de la consulta 💫',
-        1300,
+        'Ahora mismo las chicas que mejor encajan están ocupadas, cielo, pero si quieres te preparo una reserva para que no te quedes sin tu consulta.',
+        1200,
         'Central está escribiendo...'
       )
       return
     }
 
-    const topic = classifyTopic(text)
+    addDelayedMessage(
+      'central',
+      `De las que tengo libres ahora mismo, ${best.name} es de las que más gustan. ${best.intro} Si quieres, te la paso ahora mismo para que aproveches la consulta.`,
+      1300,
+      'Central está escribiendo...'
+    )
+
+    queueTimeout(() => connectToReader(best.name, 'general'), 2100)
+  }
+
+  const handleCentralLogic = (text) => {
+    const lower = normalizeText(text)
+
+    if (lower.includes('reserva') || lower.includes('reservar') || lower.includes('cita')) {
+      setReservationMode(true)
+      addDelayedMessage(
+        'central',
+        'Claro cielo 💫 Yo misma te preparo la reserva. Elige tarotista, día y hora y te la dejo cerrada ahora mismo.',
+        1000,
+        'Central está escribiendo...'
+      )
+      return
+    }
+
+    if (lower.includes('precio') || lower.includes('credito') || lower.includes('creditos') || lower.includes('créditos') || lower.includes('pagar')) {
+      answerPriceQuestion()
+      return
+    }
+
+    if (
+      lower.includes('cual es la mejor') ||
+      lower.includes('cual me recomiendas') ||
+      lower.includes('cual es la que mas gusta') ||
+      lower.includes('cuál es la mejor') ||
+      lower.includes('cuál me recomiendas')
+    ) {
+      answerBestReaderQuestion()
+      return
+    }
+
+    if (lower.includes('quiero seguir con') || lower.includes('pasame con') || lower.includes('pásame con')) {
+      const found = READER_CATALOG.find((reader) => lower.includes(normalizeText(reader.name)))
+      if (found) {
+        addDelayedMessage(
+          'central',
+          `Perfecto cielo, te transfiero con ${found.name}. Mucha suerte en tu consulta 💫`,
+          900,
+          'Central está escribiendo...'
+        )
+        queueTimeout(() => connectToReader(found.name, currentTopic), 1700)
+        return
+      }
+    }
+
+    const topic = detectTopic(text)
     setCurrentTopic(topic)
-    const reply = centralReplyForTopic(topic)
-    createHumanTypingSequence('central', reply.text, 2400, 'Central está escribiendo...')
-    queueTimeout(() => connectToReader(reply.reader, topic), 2800)
+    const readerName = findRecommendedReader(topic)
+    const reader = READER_CATALOG.find((r) => r.name === readerName)
+
+    let textReply = `Voy a pasarte con ${readerName}, cielo, que siento que puede ayudarte muy bien con esto.`
+
+    if (topic === 'amor') {
+      textReply = `Perfecto, te voy a pasar con ${readerName}, que la tengo libre y es experta en temas de amor. Tiene una sensibilidad muy bonita para ver vínculos, regresos y todo lo que todavía se mueve aunque parezca parado. Mucha suerte en tu consulta 💫`
+    } else if (topic === 'trabajo') {
+      textReply = `Para lo que me estás contando, la energía me lleva a ${readerName}. Suele ver muy rápido bloqueos de trabajo, estabilidad y cambios. Te la paso ahora mismo, cielo.`
+    } else if (topic === 'energia') {
+      textReply = `Aquí la vibración se me va claramente a ${readerName}. Es muy buena leyendo cargas, caminos y energía sutil. Te la paso ahora mismo, cielo.`
+    } else if (topic === 'familia') {
+      textReply = `Para temas de familia y emoción contenida, ${readerName} conecta enseguida. Voy a pasarte con ella para que puedas empezar con calma.`
+    } else if (topic === 'decision') {
+      textReply = `Cuando hay dudas del corazón o decisiones importantes, ${readerName} da mucha claridad. Te la paso ahora mismo para que no pierdas el hilo de lo que sientes.`
+    }
+
+    createHumanTypingSequence('central', textReply, 2400, 'Central está escribiendo...')
+    queueTimeout(() => connectToReader(readerName, topic), 3000)
   }
 
   const handleReaderLogic = async (text) => {
     const lower = normalizeText(text)
+    const currentReaderName = activeReader || 'la tarotista'
+    const currentTargetName = contextMemory.targetName || 'esa persona'
+    const userSign = extractZodiac(text)
+    const targetName = extractPersonName(text)
 
-    if (lower.includes('central') || lower.includes('volver')) {
-      backToCentral(`Ya estoy contigo otra vez, cielo 💫 ${activeReader} me deja contigo para que decidas si quieres seguir, comprar créditos o reservar.`)
-      return
+    if (userSign && !contextMemory.userSign) {
+      setContextMemory((prev) => ({ ...prev, userSign: userSign }))
+    }
+
+    if (targetName && !contextMemory.targetName) {
+      setContextMemory((prev) => ({ ...prev, targetName }))
     }
 
     if (readerStage === 'intro') {
-      setReaderStage('details')
+      setReaderStage('awaiting-question')
       addDelayedMessage(
         'reader',
-        `Claro cielo. Para empezar bien contigo, necesito que me digas tu signo y que me expliques un poquito mejor la situación que quieres mirar. Así entro mejor en tu energía.`,
+        'Claro cielo, dime tu horóscopo para poder entrar mejor en tu energía y explícame un poquito más la pregunta que quieres mirar conmigo.',
         2200,
-        `${activeReader} está escribiendo...`
+        `${currentReaderName} está escribiendo...`
       )
       return
     }
 
-    if (!questionConsumed && isRealQuestion(text)) {
-      const allowed = await spendCreditIfNeeded()
-      if (!allowed) return
+    if (readerStage === 'awaiting-question') {
+      if (!isRealQuestion(text)) {
+        addDelayedMessage(
+          'reader',
+          'Te sigo leyendo, cielo. Dame un poquito más de detalle para poder ver exactamente qué quieres consultar.',
+          1800,
+          `${currentReaderName} está escribiendo...`
+        )
+        return
+      }
 
-      setQuestionConsumed(true)
-      setReaderStage('followup')
+      const ok = await spendMainQuestion()
+      if (!ok) return
 
+      setMainQuestionCharged(true)
+      setReaderStage('awaiting-target-sign')
+
+      const personText = targetName ? `sobre ${targetName}` : 'sobre esa persona'
+      addDelayedMessage(
+        'reader',
+        `Vamos a mirarlo, cielo. Ya estoy entrando en lo que me preguntas ${personText}. ¿Sabes el horóscopo de ${targetName || 'esa persona'}?`,
+        2600,
+        `${currentReaderName} está escribiendo...`
+      )
+      return
+    }
+
+    if (readerStage === 'awaiting-target-sign') {
+      const targetSign = extractZodiac(text)
+
+      if (targetSign) {
+        setContextMemory((prev) => ({ ...prev, targetSign }))
+      }
+
+      setReaderStage('awaiting-card-choice')
+      addDelayedMessage(
+        'reader',
+        'Perfecto cielo, dime ahora un número del 1 al 22 y elige izquierda, derecha o centro.',
+        1900,
+        `${currentReaderName} está escribiendo...`
+      )
+      return
+    }
+
+    if (readerStage === 'awaiting-card-choice') {
+      setReaderStage('answer-given')
       createHumanTypingSequence(
         'reader',
-        `Estoy entrando en tu consulta, cielo... dame un momento porque quiero mirarlo con calma antes de decirte lo primero que me venga. Lo que siento de momento es que aquí hay movimiento, pero también bloqueo emocional y orgullo. No veo esto cerrado del todo.`,
-        5200,
-        `${activeReader} está escribiendo...`
+        `Estoy haciendo la tirada, cielo... Dame un instante porque quiero mirarlo bien. Por lo que me sale en esta lectura, ${currentTargetName !== 'esa persona' ? currentTargetName : 'esa persona'} sí tiene intención de volver a acercarse, pero hay factores que todavía pesan mucho: orgullo, miedo a dar el paso y una energía bastante bloqueada. No veo esto cerrado del todo, pero sí veo que hace falta tiempo y movimiento interno.`,
+        6500,
+        `${currentReaderName} está escribiendo...`
       )
       return
     }
 
-    if (readerStage === 'followup') {
-      setReaderStage('deeper')
-      addDelayedMessage(
-        'reader',
-        `Puedo seguir profundizando contigo, cielo, y aquí ya hay bastante más que mirar. Si quieres entrar más al detalle, seguimos y lo vemos con más profundidad.`,
-        2600,
-        `${activeReader} está escribiendo...`
-      )
+    if (readerStage === 'answer-given') {
+      if (!followupUsed && isFollowupQuestion(text)) {
+        setFollowupUsed(true)
+        addDelayedMessage(
+          'reader',
+          'No cielo, lo que me marca la energía es que el movimiento viene más desde él que desde ti. Ahora bien, si quieres que profundicemos un poco más y miremos lo que todavía no se ha abierto del todo, necesitarás adquirir créditos.',
+          3000,
+          `${currentReaderName} está escribiendo...`
+        )
+        return
+      }
+
+      backToCentral(`Hola ${profile?.display_name || 'cielo'}, ¿cómo te fue con ${currentReaderName}? Si quieres seguir con la consulta, te explico los paquetes de créditos y te vuelvo a pasar con ella en cuanto me digas.`)
       return
     }
 
-    const allowed = await spendCreditIfNeeded()
-    if (!allowed) return
-
-    createHumanTypingSequence(
-      'reader',
-      `Sigo contigo, cielo. Cuanto más me cuentas, más se mueve la lectura. Aquí todavía hay cosas importantes por abrir, así que si quieres seguimos profundizando despacito.`,
-      4200,
-      `${activeReader} está escribiendo...`
-    )
+    backToCentral(`Cielo, para seguir profundizando necesito devolverte con el central y activarte créditos. En cuanto quieras, te lo preparo.`)
   }
 
   const handleSend = async () => {
     if (!input.trim() || mode === 'connecting') return
 
-    const current = input.trim()
-    pushMessage('client', current)
+    const currentInput = input.trim()
+    pushMessage('client', currentInput)
     setInput('')
 
     if (mode === 'central') {
-      handleCentralLogic(current)
+      handleCentralLogic(currentInput)
       return
     }
 
     if (mode === 'reader') {
-      await handleReaderLogic(current)
+      await handleReaderLogic(currentInput)
     }
   }
 
@@ -484,7 +534,7 @@ export default function ChatPage() {
 
   if (loading) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8f5ff' }}>
         <div style={{ color: '#5b2c83', fontSize: 18 }}>Cargando Tarot Celestial...</div>
       </div>
     )
@@ -497,13 +547,26 @@ export default function ChatPage() {
           <div style={{ textAlign: 'center', marginBottom: 24 }}>
             <img src="/logo.png" alt="Tarot Celestial" style={{ width: 88, height: 88, objectFit: 'contain', marginBottom: 16 }} />
             <h1 style={{ margin: 0, color: '#5b2c83' }}>Bienvenida a Tarot Celestial</h1>
-            <p style={{ color: '#8a6a2f', marginTop: 10 }}>Antes de empezar, dime tu nombre y el país desde el que nos escribes.</p>
+            <p style={{ color: '#8a6a2f', marginTop: 10 }}>Para poder atenderte, dime tu nombre y el país desde el que me escribes.</p>
           </div>
 
           <div style={{ display: 'grid', gap: 14 }}>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Tu nombre" style={{ padding: '14px 16px', borderRadius: 14, border: '1px solid #dccca4' }} />
-            <input value={country} onChange={(e) => setCountry(e.target.value)} placeholder="Tu país" style={{ padding: '14px 16px', borderRadius: 14, border: '1px solid #dccca4' }} />
-            <button onClick={saveProfile} style={{ padding: '14px 18px', borderRadius: 14, border: 'none', background: '#6f3ea8', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Tu nombre"
+              style={{ padding: '14px 16px', borderRadius: 14, border: '1px solid #dccca4' }}
+            />
+            <input
+              value={country}
+              onChange={(e) => setCountry(e.target.value)}
+              placeholder="Tu país"
+              style={{ padding: '14px 16px', borderRadius: 14, border: '1px solid #dccca4' }}
+            />
+            <button
+              onClick={saveProfile}
+              style={{ padding: '14px 18px', borderRadius: 14, border: 'none', background: '#6f3ea8', color: '#fff', fontWeight: 700, cursor: 'pointer' }}
+            >
               Continuar al chat
             </button>
           </div>
@@ -527,7 +590,10 @@ export default function ChatPage() {
             </div>
           </div>
 
-          <button onClick={handleLogout} style={{ border: '1px solid #d8c082', background: '#fff', color: '#6f3ea8', borderRadius: 12, padding: '10px 14px', cursor: 'pointer', fontWeight: 600 }}>
+          <button
+            onClick={handleLogout}
+            style={{ border: '1px solid #d8c082', background: '#fff', color: '#6f3ea8', borderRadius: 12, padding: '10px 14px', cursor: 'pointer', fontWeight: 600 }}
+          >
             Cerrar sesión
           </button>
         </div>
@@ -587,7 +653,7 @@ export default function ChatPage() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
                   <select value={reservationReader} onChange={(e) => setReservationReader(e.target.value)} style={{ padding: 12, borderRadius: 12, border: '1px solid #dccca4' }}>
                     <option value="">Tarotista</option>
-                    {ALL_READERS.map((reader) => <option key={reader.name} value={reader.name}>{reader.name}</option>)}
+                    {READER_CATALOG.map((reader) => <option key={reader.name} value={reader.name}>{reader.name}</option>)}
                   </select>
                   <input type="date" value={reservationDay} onChange={(e) => setReservationDay(e.target.value)} style={{ padding: 12, borderRadius: 12, border: '1px solid #dccca4' }} />
                   <input type="time" value={reservationTime} onChange={(e) => setReservationTime(e.target.value)} style={{ padding: 12, borderRadius: 12, border: '1px solid #dccca4' }} />
@@ -611,11 +677,13 @@ export default function ChatPage() {
 
             <div ref={messagesRef} onScroll={onMessagesScroll} style={{ flex: 1, minHeight: 0, padding: 18, overflowY: 'auto', display: 'grid', gap: 12 }}>
               {mode === 'connecting' ? (
-                <div style={{ textAlign: 'center', color: '#8a6a2f', fontWeight: 700 }}>Un momento, cielo. Te estoy pasando con {activeReader}...</div>
+                <div style={{ textAlign: 'center', color: '#8a6a2f', fontWeight: 700 }}>
+                  Conectando con {activeReader}, un momento...
+                </div>
               ) : (
                 messages.map((message, index) => {
                   const isClient = message.sender === 'client'
-                  const label = isClient ? '' : message.sender === 'reader' ? (activeReader || 'TAROTISTA').toUpperCase() : 'CENTRAL'
+                  const isReader = message.sender === 'reader'
                   return (
                     <div key={index} style={{ display: 'flex', justifyContent: isClient ? 'flex-end' : 'flex-start' }}>
                       <div style={{
@@ -626,7 +694,11 @@ export default function ChatPage() {
                         color: isClient ? '#fff' : '#4b2a67',
                         border: isClient ? 'none' : '1px solid #eadcf8'
                       }}>
-                        {!isClient && <div style={{ fontSize: 12, fontWeight: 700, color: '#8a6a2f', marginBottom: 6 }}>{label}</div>}
+                        {!isClient && (
+                          <div style={{ fontSize: 12, fontWeight: 700, color: '#8a6a2f', marginBottom: 6 }}>
+                            {isReader ? activeReader?.toUpperCase() : 'CENTRAL'}
+                          </div>
+                        )}
                         <div style={{ lineHeight: 1.6 }}>{message.text}</div>
                       </div>
                     </div>
@@ -647,11 +719,14 @@ export default function ChatPage() {
               <input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSend() }}
                 placeholder={mode === 'reader' ? 'Escribe tu consulta...' : 'Escribe aquí tu mensaje...'}
                 style={{ flex: 1, padding: '14px 16px', borderRadius: 16, border: '1px solid #dccca4', outline: 'none' }}
               />
-              <button onClick={handleSend} style={{ padding: '14px 18px', borderRadius: 16, border: 'none', background: '#6f3ea8', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+              <button
+                onClick={handleSend}
+                style={{ padding: '14px 18px', borderRadius: 16, border: 'none', background: '#6f3ea8', color: '#fff', fontWeight: 700, cursor: 'pointer' }}
+              >
                 Enviar
               </button>
             </div>
@@ -663,7 +738,7 @@ export default function ChatPage() {
               <div style={{ color: '#8a6a2f', fontSize: 13 }}>Saldo actual</div>
               <div style={{ color: '#5b2c83', fontSize: 30, fontWeight: 800, marginTop: 4 }}>{credits}</div>
               <div style={{ color: '#8c7a58', fontSize: 13 }}>
-                {freeQuestionUsed ? 'La consulta gratis ya está en uso' : 'Incluye tu primera consulta gratuita'}
+                {freeQuestionUsed ? 'La consulta gratis ya está usada' : 'Incluye tu primera consulta gratuita'}
               </div>
             </div>
 
@@ -673,7 +748,6 @@ export default function ChatPage() {
               width: '100%',
               padding: '14px 16px',
               borderRadius: 14,
-              border: 'none',
               background: '#d6ad45',
               color: '#fff',
               fontWeight: 800,
@@ -695,7 +769,9 @@ export default function ChatPage() {
             <button
               onClick={() => {
                 setReservationMode(true)
-                if (mode !== 'central') backToCentral('Perfecto cielo 💫 te llevo al central para dejarte la reserva preparada.')
+                if (mode !== 'central') {
+                  backToCentral('Perfecto cielo 💫 te llevo con el central para dejarte la reserva preparada.')
+                }
               }}
               style={{ width: '100%', padding: '14px 16px', borderRadius: 14, border: '1px solid #dccca4', background: '#fff', color: '#6f3ea8', fontWeight: 800, cursor: 'pointer', marginBottom: 10 }}
             >

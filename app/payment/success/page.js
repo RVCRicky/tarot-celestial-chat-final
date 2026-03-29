@@ -1,4 +1,16 @@
+'use client'
+import { useEffect } from 'react'
+
 export default function PaymentSuccessPage() {
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('tc_payment_success', '1')
+      setTimeout(() => {
+        window.location.href = '/chat'
+      }, 2200)
+    }
+  }, [])
+
   return (
     <main style={{
       minHeight: '100vh',
@@ -21,20 +33,8 @@ export default function PaymentSuccessPage() {
         <img src="/logo.png" alt="Tarot Celestial" style={{ width: 72, height: 72, objectFit: 'contain', marginBottom: 12 }} />
         <h1 style={{ color: '#5b2c83' }}>Pago realizado</h1>
         <p style={{ color: '#7a6690', lineHeight: 1.7 }}>
-          Perfecto cielo, el pago se ha completado correctamente. Tus créditos ya deberían estar actualizados.
+          Perfecto cielo, el pago se ha completado correctamente. Volvemos al chat para seguir contigo...
         </p>
-        <a href="/chat" style={{
-          display: 'inline-block',
-          marginTop: 12,
-          padding: '14px 18px',
-          background: '#6f3ea8',
-          color: '#fff',
-          borderRadius: 14,
-          textDecoration: 'none',
-          fontWeight: 800
-        }}>
-          Volver al chat
-        </a>
       </div>
     </main>
   )
