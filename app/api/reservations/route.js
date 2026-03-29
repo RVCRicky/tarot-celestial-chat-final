@@ -1,9 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-)
+import { getServiceSupabase } from '../../../../lib/serverSupabase'
 
 async function sendReservationEmail({ email, displayName, readerName, reservedFor }) {
   const apiKey = process.env.RESEND_API_KEY
@@ -42,6 +37,7 @@ async function sendReservationEmail({ email, displayName, readerName, reservedFo
 
 export async function POST(request) {
   try {
+    const supabase = getServiceSupabase()
     const body = await request.json()
 
     const { data: reservation, error } = await supabase
@@ -56,9 +52,7 @@ export async function POST(request) {
       .select('*')
       .single()
 
-    if (error) {
-      return Response.json({ error: error.message || 'No se pudo guardar la reserva' }, { status: 500 })
-    }
+    if (error) return Response.json({ error: error.message }, { status: 500 })
 
     const emailResult = await sendReservationEmail({
       email: body.email,
@@ -67,12 +61,7 @@ export async function POST(request) {
       reservedFor: body.reservedFor
     })
 
-    return Response.json({
-      ok: true,
-      reservation,
-      emailSent: emailResult.sent,
-      emailSkipped: emailResult.skipped
-    })
+    return Response.json({ ok: true, reservation, emailSent: emailResult.sent, emailSkipped: emailResult.skipped })
   } catch (error) {
     return Response.json({ error: error.message || 'No se pudo crear la reserva' }, { status: 500 })
   }

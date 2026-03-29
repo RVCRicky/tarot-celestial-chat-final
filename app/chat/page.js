@@ -2,62 +2,151 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import {
-  READER_CATALOG,
-  getReadersForUI,
-  detectTopic,
-  findRecommendedReader,
-  getPricePackForCountry,
-  extractPersonName,
+  READERS,
+  topicFromText,
+  recommendedReader,
+  pricesForCountry,
+  extractName,
   extractZodiac,
-  isRealQuestion,
-  isFollowupQuestion,
+  isMainQuestion,
+  isFollowup,
+  estimateTypingMs,
   normalizeText
-} from '../../lib/chatConfig'
+} from '../../lib/chatShared'
+
+const CENTRAL_NAME = 'Clara'
+
+function readerGreeting(name) {
+  const reader = READERS.find((r) => r.name === name)
+  return reader
+    ? `Hola cielo, soy ${name} de Tarot Celestial. ${reader.description} Estoy contigo, cuéntame con calma en qué te puedo ayudar hoy.`
+    : `Hola cielo, soy ${name} de Tarot Celestial. Estoy contigo, cuéntame con calma en qué te puedo ayudar hoy.`
+}
 
 export default function ChatPage() {
   const [loading, setLoading] = useState(true)
   const [profile, setProfile] = useState(null)
-  const [name, setName] = useState('')
-  const [country, setCountry] = useState('')
-  const [step, setStep] = useState('loading')
-  const [mode, setMode] = useState('central')
-  const [activeReader, setActiveReader] = useState(null)
-  const [credits, setCredits] = useState(0)
-  const [freeQuestionUsed, setFreeQuestionUsed] = useState(false)
+  const [session, setSession] = useState(null)
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
-  const [isTyping, setIsTyping] = useState(false)
-  const [typingLabel, setTypingLabel] = useState('Central está escribiendo...')
+  const [credits, setCredits] = useState(0)
+  const [freeQuestionUsed, setFreeQuestionUsed] = useState(false)
+  const [activeReader, setActiveReader] = useState(null)
+  const [readers, setReaders] = useState([])
+  const [mode, setMode] = useState('central')
+  const [typing, setTyping] = useState('')
   const [reservationMode, setReservationMode] = useState(false)
   const [reservationReader, setReservationReader] = useState('')
   const [reservationDay, setReservationDay] = useState('')
   const [reservationTime, setReservationTime] = useState('')
   const [reservationNote, setReservationNote] = useState('')
-  const [currentTopic, setCurrentTopic] = useState('general')
-  const [readerStage, setReaderStage] = useState('intro')
-  const [mainQuestionCharged, setMainQuestionCharged] = useState(false)
-  const [followupUsed, setFollowupUsed] = useState(false)
-  const [contextMemory, setContextMemory] = useState({
+  const [pendingTransfer, setPendingTransfer] = useState(null)
+  const [memory, setMemory] = useState({
+    topic: '',
     targetName: '',
     userSign: '',
     targetSign: '',
-    lastReader: ''
+    readerStage: 'intro'
   })
-  const messagesRef = useRef(null)
-  const scrollLockRef = useRef(true)
-  const timeoutRef = useRef([])
+  const [knownMessageIds, setKnownMessageIds] = useState({})
+  const scrollRef = useRef(null)
+  const shouldStickRef = useRef(true)
+  const timersRef = useRef([])
 
-  const readers = useMemo(() => getReadersForUI(activeReader), [activeReader])
+  const onlineReaders = useMemo(() => readers.filter((r) => r.status !== 'Offline'), [readers])
+  const offlineReaders = useMemo(() => readers.filter((r) => r.status === 'Offline'), [readers])
+
+  const queue = (fn, delay) => {
+    const id = setTimeout(fn, delay)
+    timersRef.current.push(id)
+  }
+
+  const addLocalMessage = (message) => {
+    setMessages((prev) => [...prev, message])
+  }
+
+  const persistMessage = async (sender, text, senderName = null) => {
+    if (!session?.id) return null
+    const res = await fetch('/api/session/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: session.id, sender, text, senderName })
+    })
+    const json = await res.json()
+    return json.message || null
+  }
+
+  const addAndPersist = async (sender, text, senderName = null) => {
+    const temp = { id: `temp-${Math.random()}`, sender, sender_name: senderName, text }
+    addLocalMessage(temp)
+    const saved = await persistMessage(sender, text, senderName)
+    if (saved) {
+      setKnownMessageIds((prev) => ({ ...prev, [saved.id]: true }))
+    }
+  }
+
+  const showTypingAndAnswer = async (sender, senderName, text, minDelay = 1500) => {
+    const label = sender === 'reader'
+      ? `${senderName || activeReader || 'Tarotista'} está escribiendo...`
+      : `${senderName || CENTRAL_NAME} está escribiendo...`
+
+    setTyping(label)
+    const total = estimateTypingMs(text, minDelay, 34, minDelay, 10000)
+
+    queue(() => setTyping(''), Math.floor(total * 0.45))
+    queue(() => setTyping(label), Math.floor(total * 0.62))
+    queue(async () => {
+      setTyping('')
+      await addAndPersist(sender, text, senderName)
+    }, total)
+  }
+
+  const fetchReaders = async () => {
+    const res = await fetch('/api/readers/list')
+    const json = await res.json()
+    setReaders(json.readers || [])
+    return json.readers || []
+  }
+
+  const fetchMessages = async (sessionId) => {
+    const res = await fetch(`/api/session/messages?sessionId=${sessionId}`)
+    const json = await res.json()
+    const incoming = json.messages || []
+
+    setMessages((prev) => {
+      const prevIds = new Set(prev.map((m) => m.id).filter(Boolean))
+      const merged = [...prev]
+      incoming.forEach((m) => {
+        if (!prevIds.has(m.id)) {
+          merged.push(m)
+        }
+      })
+      return merged
+    })
+
+    setKnownMessageIds((prev) => {
+      const next = { ...prev }
+      incoming.forEach((m) => { next[m.id] = true })
+      return next
+    })
+  }
+
+  const heartbeat = async (currentMode, currentReaderName) => {
+    if (!session?.id) return
+    await fetch('/api/session/heartbeat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId: session.id,
+        mode: currentMode,
+        currentReaderName: currentReaderName || null
+      })
+    })
+  }
 
   useEffect(() => {
     const init = async () => {
-      if (!supabase) {
-        alert('Falta configurar Supabase')
-        return
-      }
-
       const { data: authData } = await supabase.auth.getUser()
-
       if (!authData.user) {
         window.location.href = '/auth/login'
         return
@@ -69,205 +158,303 @@ export default function ChatPage() {
         .eq('auth_user_id', authData.user.id)
         .maybeSingle()
 
-      const paymentSuccess = typeof window !== 'undefined' ? window.localStorage.getItem('tc_payment_success') : null
-      const lastReader = typeof window !== 'undefined' ? window.localStorage.getItem('tc_last_reader') : null
-
       if (!profileData) {
-        setStep('askData')
-      } else {
-        setProfile(profileData)
-        setCredits(profileData.credits || 0)
-        setFreeQuestionUsed(profileData.free_question_used || false)
-        setStep('chat')
+        alert('Falta perfil. Regístrate de nuevo.')
+        window.location.href = '/auth/register'
+        return
+      }
 
-        if (paymentSuccess === '1') {
-          if (typeof window !== 'undefined') window.localStorage.removeItem('tc_payment_success')
-          addDelayedMessage(
-            'central',
-            `Perfecto ${profileData.display_name}, ya veo que has realizado el pago y tus créditos están asignados. ${lastReader ? `¿Quieres seguir hablando con ${lastReader} o prefieres probar a otra de nuestras chicas?` : '¿Quieres continuar con tu consulta?'}`,
-            1200,
-            'Central está escribiendo...'
-          )
-        } else {
-          addDelayedMessage(
-            'central',
-            `Hola ${profileData.display_name}, bienvenida de nuevo a Tarot Celestial. Estoy aquí contigo, cielo. ¿En qué te puedo ayudar hoy?`,
-            1000,
-            'Central está escribiendo...'
-          )
-        }
+      setProfile(profileData)
+      setCredits(profileData.credits || 0)
+      setFreeQuestionUsed(profileData.free_question_used || false)
+
+      const sessionRes = await fetch('/api/session/init', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profileId: profileData.id })
+      })
+      const sessionJson = await sessionRes.json()
+      setSession(sessionJson.session)
+
+      await fetchReaders()
+      await fetchMessages(sessionJson.session.id)
+
+      if (sessionJson.session && (!messages.length)) {
+        const welcome = `Hola ${profileData.display_name}, bienvenida de nuevo a Tarot Celestial. Soy ${CENTRAL_NAME}, del central. ¿En qué te puedo ayudar hoy, cielo?`
+        await addAndPersist('central', welcome, CENTRAL_NAME)
+      }
+
+      if (typeof window !== 'undefined' && window.localStorage.getItem('tc_payment_success') === '1') {
+        window.localStorage.removeItem('tc_payment_success')
+        queue(async () => {
+          await addAndPersist('central', `Perfecto ${profileData.display_name}, veo que ya has realizado el pago y ya tienes los créditos asignados. ¿Deseas seguir hablando con ${window.localStorage.getItem('tc_last_reader') || 'tu tarotista'} o prefieres probar a otra de nuestras chicas?`, CENTRAL_NAME)
+        }, 900)
       }
 
       setLoading(false)
     }
 
-    init()
-    return () => timeoutRef.current.forEach(clearTimeout)
+    if (supabase) init()
+    return () => timersRef.current.forEach(clearTimeout)
   }, [])
 
   useEffect(() => {
-    const el = messagesRef.current
+    if (!session?.id) return
+    const messagesPoll = setInterval(() => fetchMessages(session.id), 3500)
+    const readersPoll = setInterval(fetchReaders, 6000)
+    const beat = setInterval(() => heartbeat(mode, activeReader), 15000)
+    return () => {
+      clearInterval(messagesPoll)
+      clearInterval(readersPoll)
+      clearInterval(beat)
+    }
+  }, [session?.id, mode, activeReader])
+
+  useEffect(() => {
+    const el = scrollRef.current
     if (!el) return
-    if (scrollLockRef.current) {
+    if (shouldStickRef.current) {
       el.scrollTop = el.scrollHeight
     }
-  }, [messages, isTyping])
+  }, [messages, typing])
 
-  const onMessagesScroll = () => {
-    const el = messagesRef.current
+  const onScroll = () => {
+    const el = scrollRef.current
     if (!el) return
-    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
-    scrollLockRef.current = distanceFromBottom < 80
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight
+    shouldStickRef.current = distance < 80
   }
 
-  const queueTimeout = (fn, delay) => {
-    const id = setTimeout(fn, delay)
-    timeoutRef.current.push(id)
-  }
-
-  const pushMessage = (sender, text) => {
-    setMessages((prev) => [...prev, { sender, text }])
-  }
-
-  const addDelayedMessage = (sender, text, delay = 1200, label = 'Central está escribiendo...') => {
-    setTypingLabel(label)
-    setIsTyping(true)
-    queueTimeout(() => {
-      pushMessage(sender, text)
-      setIsTyping(false)
-    }, delay)
-  }
-
-  const createHumanTypingSequence = (sender, text, totalDelay, label) => {
-    setTypingLabel(label)
-    setIsTyping(true)
-
-    queueTimeout(() => {
-      setIsTyping(false)
-    }, Math.max(500, totalDelay * 0.35))
-
-    queueTimeout(() => {
-      setTypingLabel(label)
-      setIsTyping(true)
-    }, Math.max(900, totalDelay * 0.58))
-
-    queueTimeout(() => {
-      pushMessage(sender, text)
-      setIsTyping(false)
-    }, totalDelay)
-  }
-
-  const saveProfile = async () => {
-    if (!name.trim() || !country.trim()) {
-      alert('Escribe tu nombre y tu país')
-      return
+  const askAI = async (role, latestUserMessage, availableReadersList = []) => {
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          role,
+          profileName: profile?.display_name || '',
+          country: profile?.country || '',
+          conversation: messages.slice(-12).map((m) => ({ sender: m.sender || m.sender_name || 'system', text: m.text })),
+          latestUserMessage,
+          availableReaders: availableReadersList,
+          memory: {
+            ...memory,
+            readerName: activeReader,
+            credits,
+            freeQuestionUsed
+          }
+        })
+      })
+      const json = await res.json()
+      if (!res.ok) return null
+      return json.text || null
+    } catch {
+      return null
     }
-
-    const { data: authData } = await supabase.auth.getUser()
-
-    const newProfile = {
-      auth_user_id: authData.user.id,
-      display_name: name.trim(),
-      country: country.trim(),
-      credits: 0,
-      free_question_used: false
-    }
-
-    const { error } = await supabase.from('profiles').insert(newProfile)
-
-    if (error) {
-      alert(error.message || 'No se pudo guardar el perfil')
-      return
-    }
-
-    setProfile(newProfile)
-    setCredits(0)
-    setFreeQuestionUsed(false)
-    setStep('chat')
-    addDelayedMessage(
-      'central',
-      `Perfecto ${name.trim()}, como es la primera vez que nos escribes tienes una consulta completamente gratis. Si me dices sobre qué tema quieres consultar, te recomiendo a la mejor tarotista.`,
-      1200,
-      'Central está escribiendo...'
-    )
   }
 
-  const connectToReader = (readerName, topic = 'general') => {
-    const reader = READER_CATALOG.find((item) => item.name === readerName)
-    if (!reader) return
-
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem('tc_last_reader', readerName)
-    }
-
-    setMode('connecting')
-    setActiveReader(readerName)
-    setCurrentTopic(topic)
-    setMainQuestionCharged(false)
-    setFollowupUsed(false)
-    setReaderStage('intro')
-    setInput('')
-    setContextMemory((prev) => ({ ...prev, lastReader: readerName }))
-
-    queueTimeout(() => {
-      setMode('reader')
-      setMessages([{ sender: 'reader', text: reader.greeting }])
-    }, 1900)
-  }
-
-  const backToCentral = (customMessage) => {
-    setMode('central')
-    setMessages([])
-    setInput('')
-    setActiveReader(null)
-    setReaderStage('intro')
-    setMainQuestionCharged(false)
-    setFollowupUsed(false)
-    addDelayedMessage(
-      'central',
-      customMessage || `Hola ${profile?.display_name || 'cielo'}, ya estoy otra vez contigo en central. Dime qué necesitas y te ayudo encantado.`,
-      900,
-      'Central está escribiendo...'
-    )
-  }
-
-  const spendMainQuestion = async () => {
+  const chargeMainQuestion = async () => {
     if (!freeQuestionUsed) {
-      const { data: auth } = await supabase.auth.getUser()
-
-      await supabase
-        .from('profiles')
-        .update({ free_question_used: true })
-        .eq('auth_user_id', auth.user.id)
-
+      await supabase.from('profiles').update({ free_question_used: true }).eq('id', profile.id)
       setFreeQuestionUsed(true)
       return true
     }
 
-    if (credits <= 0) {
-      backToCentral(`Cielo, estoy encantada de poder seguir contigo, pero para continuar la consulta necesito que el central te active créditos. En cuanto quieras, te los preparo.`)
-      return false
-    }
+    if (credits <= 0) return false
 
-    const { data: auth } = await supabase.auth.getUser()
-    const { data: current } = await supabase
-      .from('profiles')
-      .select('credits')
-      .eq('auth_user_id', auth.user.id)
-      .single()
-
-    const newCredits = Math.max((current?.credits || 0) - 1, 0)
-
-    await supabase
-      .from('profiles')
-      .update({ credits: newCredits })
-      .eq('auth_user_id', auth.user.id)
-
+    const newCredits = Math.max(credits - 1, 0)
+    await supabase.from('profiles').update({ credits: newCredits }).eq('id', profile.id)
     setCredits(newCredits)
     return true
   }
 
-  const createReservation = async () => {
+  const beginTransfer = async (readerName) => {
+    await addAndPersist('central', `Vale cielo, te transfiero con ${readerName}. Un momento...`, CENTRAL_NAME)
+
+    queue(() => {
+      setMode('connecting')
+      setTyping('')
+    }, 3000)
+
+    const randomDelay = 6000 + Math.floor(Math.random() * 14000)
+
+    queue(async () => {
+      const res = await fetch('/api/readers/claim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          readerName,
+          profileId: profile.id,
+          sessionId: session.id
+        })
+      })
+      const json = await res.json()
+
+      if (!res.ok) {
+        setMode('central')
+        await addAndPersist('central', `Cielo, justo ahora ${readerName} ha pasado a estar ocupada. Si quieres te recomiendo a otra de las que tengo libres en este momento.`, CENTRAL_NAME)
+        await fetchReaders()
+        return
+      }
+
+      setActiveReader(readerName)
+      setMode('reader')
+      setPendingTransfer(null)
+      setMemory((prev) => ({ ...prev, readerStage: 'intro' }))
+      await fetchReaders()
+      await addAndPersist('reader', readerGreeting(readerName), readerName)
+    }, 3000 + randomDelay)
+  }
+
+  const releaseReader = async () => {
+    if (!activeReader) return
+    await fetch('/api/readers/release', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ readerName: activeReader })
+    })
+    await fetchReaders()
+  }
+
+  const answerCentral = async (text) => {
+    const lower = normalizeText(text)
+
+    if (pendingTransfer) {
+      if (['si', 'sí', 'vale', 'ok', 'perfecto', 'claro', 'de acuerdo'].includes(lower)) {
+        await beginTransfer(pendingTransfer)
+        return
+      }
+      if (['no', 'mejor no', 'espera'].includes(lower)) {
+        setPendingTransfer(null)
+        await showTypingAndAnswer('central', CENTRAL_NAME, 'Claro cielo, no pasa nada. Dime qué prefieres y lo vemos juntas.', 1200)
+        return
+      }
+    }
+
+    if (lower.includes('precio') || lower.includes('credit') || lower.includes('pagar')) {
+      const p = pricesForCountry(profile?.country || '')
+      await showTypingAndAnswer('central', CENTRAL_NAME, `Claro cielo, ahora mismo tienes 3 preguntas por ${p.p3}, 5 preguntas por ${p.p5} y 10 preguntas por ${p.p10}. Tú me dices cuál deseas adquirir y te paso el enlace de pago.`, 1400)
+      return
+    }
+
+    if (lower.includes('reserv') || lower.includes('cita')) {
+      setReservationMode(true)
+      await showTypingAndAnswer('central', CENTRAL_NAME, 'Claro cielo, te preparo la reserva. Elige tarotista, día y hora y yo me encargo de dejártela cerrada.', 1300)
+      return
+    }
+
+    if (
+      lower.includes('cual es la mejor') ||
+      lower.includes('cuál es la mejor') ||
+      lower.includes('cual es la que mas gusta') ||
+      lower.includes('cuál es la que más gusta') ||
+      lower.includes('cual me recomiendas') ||
+      lower.includes('cuál me recomiendas')
+    ) {
+      const available = readers.filter((r) => r.status === 'Libre')
+      const ai = await askAI('central', text, available)
+      await showTypingAndAnswer('central', CENTRAL_NAME, ai || `De las que tengo libres ahora mismo, ${available[0]?.name || 'Aurora'} es de las que más gustan. Si quieres, te paso con ella.`, 1600)
+      return
+    }
+
+    const topic = topicFromText(text)
+    const available = readers.filter((r) => r.status === 'Libre')
+    const suggested = recommendedReader(topic, available)
+    setMemory((prev) => ({ ...prev, topic }))
+
+    let reply = await askAI('central', text, available)
+    if (!reply) {
+      const reader = available.find((r) => r.name === suggested) || available[0]
+      reply = `Por lo que me estás contando, cielo, siento que te iría muy bien hablar con ${reader?.name || 'Aurora'}, porque ${reader?.description || 'conecta muy bien con este tema'}. Si quieres, te paso con ${reader?.name || 'ella'} ahora mismo.`
+    }
+
+    setPendingTransfer(suggested)
+    await showTypingAndAnswer('central', CENTRAL_NAME, reply, 1700)
+  }
+
+  const answerReader = async (text) => {
+    const lower = normalizeText(text)
+    const stage = memory.readerStage || 'intro'
+    const z = extractZodiac(text)
+    const personName = extractName(text)
+
+    if (z) {
+      if (!memory.userSign) {
+        setMemory((prev) => ({ ...prev, userSign: z }))
+      } else if (!memory.targetSign) {
+        setMemory((prev) => ({ ...prev, targetSign: z }))
+      }
+    }
+    if (personName && !memory.targetName) {
+      setMemory((prev) => ({ ...prev, targetName: personName }))
+    }
+
+    if (stage === 'intro') {
+      setMemory((prev) => ({ ...prev, readerStage: 'awaiting-main' }))
+      const ai = await askAI('reader', text)
+      await showTypingAndAnswer('reader', activeReader, ai || 'Claro cielo, dime tu horóscopo para que pueda entrar mejor en tu energía y explícame un poquito más la pregunta que quieres mirar conmigo.', 2200)
+      return
+    }
+
+    if (stage === 'awaiting-main') {
+      if (!isMainQuestion(text)) {
+        await showTypingAndAnswer('reader', activeReader, 'Te sigo leyendo, cielo. Dame un poquito más de detalle para poder ver exactamente lo que quieres consultar.', 1800)
+        return
+      }
+
+      const allowed = await chargeMainQuestion()
+      if (!allowed) {
+        await releaseReader()
+        setMode('central')
+        setActiveReader(null)
+        await showTypingAndAnswer('central', CENTRAL_NAME, 'Cielo, para seguir con la consulta necesito activarte créditos. Si quieres, te explico ahora mismo los paquetes y te vuelvo a pasar con tu tarotista.', 1500)
+        return
+      }
+
+      setMemory((prev) => ({ ...prev, readerStage: 'awaiting-target-sign' }))
+      const ai = await askAI('reader', text)
+      await showTypingAndAnswer('reader', activeReader, ai || `Vamos a mirarlo, cielo. ¿Sabes el horóscopo de ${memory.targetName || 'esa persona'}?`, 2600)
+      return
+    }
+
+    if (stage === 'awaiting-target-sign') {
+      setMemory((prev) => ({ ...prev, readerStage: 'awaiting-card' }))
+      await showTypingAndAnswer('reader', activeReader, 'Perfecto cielo, dime ahora un número del 1 al 22 y elige izquierda, derecha o centro.', 1900)
+      return
+    }
+
+    if (stage === 'awaiting-card') {
+      setMemory((prev) => ({ ...prev, readerStage: 'answer-given' }))
+      const ai = await askAI('reader', text)
+      await showTypingAndAnswer('reader', activeReader, ai || `Estoy haciendo la tirada, cielo... Dame un instante. Por lo que veo, ${memory.targetName || 'esa persona'} sí quiere volver, pero hay orgullo, bloqueo y una energía que todavía no termina de moverse como debería. No veo esto cerrado del todo.`, 5200)
+      return
+    }
+
+    if (stage === 'answer-given') {
+      if (isFollowup(text)) {
+        setMemory((prev) => ({ ...prev, readerStage: 'followup-used' }))
+        const ai = await askAI('reader', text)
+        await showTypingAndAnswer('reader', activeReader, ai || 'No cielo, lo que me marca la energía es que el movimiento viene más desde él que desde ti. Pero si quieres que profundicemos un poco más, ya necesitaríamos créditos para seguir con la consulta.', 3200)
+        return
+      }
+
+      await releaseReader()
+      setMode('central')
+      setActiveReader(null)
+      await showTypingAndAnswer('central', CENTRAL_NAME, `Hola ${profile.display_name}, ¿cómo te fue con ${memory.lastReader || 'tu tarotista'}? Si quieres seguir con la consulta, te explico los créditos y te la vuelvo a pasar.`, 1300)
+      return
+    }
+
+    if (stage === 'followup-used') {
+      await releaseReader()
+      setMode('central')
+      setActiveReader(null)
+      await showTypingAndAnswer('central', CENTRAL_NAME, `Cielo, si quieres seguir profundizando con ${memory.lastReader || 'tu tarotista'}, te activo créditos y te la vuelvo a pasar en cuanto me digas.`, 1400)
+      return
+    }
+  }
+
+  const submitReservation = async () => {
     if (!reservationReader || !reservationDay || !reservationTime) {
       alert('Selecciona tarotista, día y hora')
       return
@@ -279,17 +466,15 @@ export default function ChatPage() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        profileId: profile?.id,
+        profileId: profile.id,
         readerName: reservationReader,
         reservedFor,
         notes: reservationNote,
-        email: profile?.email || null,
-        displayName: profile?.display_name || null
+        email: profile.email || '',
+        displayName: profile.display_name || ''
       })
     })
-
     const json = await res.json()
-
     if (!res.ok) {
       alert(json.error || 'No se pudo crear la reserva')
       return
@@ -300,234 +485,30 @@ export default function ChatPage() {
     setReservationDay('')
     setReservationTime('')
     setReservationNote('')
-
-    addDelayedMessage(
-      'central',
-      `Perfecto cielo 💫 Te he dejado la reserva preparada con ${reservationReader}. ${json.emailSent ? 'Además, te llegará un email de confirmación.' : 'La reserva queda guardada ya mismo en el sistema.'}`,
-      1000,
-      'Central está escribiendo...'
-    )
-  }
-
-  const answerPriceQuestion = () => {
-    const priceInfo = getPricePackForCountry(profile?.country || country || '')
-    addDelayedMessage(
-      'central',
-      `Claro cielo, ahora mismo para ${profile?.country || 'tu país'} estoy trabajando con estas ofertas: 3 preguntas por ${priceInfo.p3}, 5 preguntas por ${priceInfo.p5} y 10 preguntas por ${priceInfo.p10}. Tú me dices cuál deseas adquirir y te paso a la pasarela de pago.`,
-      1200,
-      'Central está escribiendo...'
-    )
-  }
-
-  const answerBestReaderQuestion = () => {
-    const available = readers.filter((r) => r.status === 'Libre')
-    const best = available[0] || null
-
-    if (!best) {
-      addDelayedMessage(
-        'central',
-        'Ahora mismo las chicas que mejor encajan están ocupadas, cielo, pero si quieres te preparo una reserva para que no te quedes sin tu consulta.',
-        1200,
-        'Central está escribiendo...'
-      )
-      return
-    }
-
-    addDelayedMessage(
-      'central',
-      `De las que tengo libres ahora mismo, ${best.name} es de las que más gustan. ${best.intro} Si quieres, te la paso ahora mismo para que aproveches la consulta.`,
-      1300,
-      'Central está escribiendo...'
-    )
-
-    queueTimeout(() => connectToReader(best.name, 'general'), 2100)
-  }
-
-  const handleCentralLogic = (text) => {
-    const lower = normalizeText(text)
-
-    if (lower.includes('reserva') || lower.includes('reservar') || lower.includes('cita')) {
-      setReservationMode(true)
-      addDelayedMessage(
-        'central',
-        'Claro cielo 💫 Yo misma te preparo la reserva. Elige tarotista, día y hora y te la dejo cerrada ahora mismo.',
-        1000,
-        'Central está escribiendo...'
-      )
-      return
-    }
-
-    if (lower.includes('precio') || lower.includes('credito') || lower.includes('creditos') || lower.includes('créditos') || lower.includes('pagar')) {
-      answerPriceQuestion()
-      return
-    }
-
-    if (
-      lower.includes('cual es la mejor') ||
-      lower.includes('cual me recomiendas') ||
-      lower.includes('cual es la que mas gusta') ||
-      lower.includes('cuál es la mejor') ||
-      lower.includes('cuál me recomiendas')
-    ) {
-      answerBestReaderQuestion()
-      return
-    }
-
-    if (lower.includes('quiero seguir con') || lower.includes('pasame con') || lower.includes('pásame con')) {
-      const found = READER_CATALOG.find((reader) => lower.includes(normalizeText(reader.name)))
-      if (found) {
-        addDelayedMessage(
-          'central',
-          `Perfecto cielo, te transfiero con ${found.name}. Mucha suerte en tu consulta 💫`,
-          900,
-          'Central está escribiendo...'
-        )
-        queueTimeout(() => connectToReader(found.name, currentTopic), 1700)
-        return
-      }
-    }
-
-    const topic = detectTopic(text)
-    setCurrentTopic(topic)
-    const readerName = findRecommendedReader(topic)
-    const reader = READER_CATALOG.find((r) => r.name === readerName)
-
-    let textReply = `Voy a pasarte con ${readerName}, cielo, que siento que puede ayudarte muy bien con esto.`
-
-    if (topic === 'amor') {
-      textReply = `Perfecto, te voy a pasar con ${readerName}, que la tengo libre y es experta en temas de amor. Tiene una sensibilidad muy bonita para ver vínculos, regresos y todo lo que todavía se mueve aunque parezca parado. Mucha suerte en tu consulta 💫`
-    } else if (topic === 'trabajo') {
-      textReply = `Para lo que me estás contando, la energía me lleva a ${readerName}. Suele ver muy rápido bloqueos de trabajo, estabilidad y cambios. Te la paso ahora mismo, cielo.`
-    } else if (topic === 'energia') {
-      textReply = `Aquí la vibración se me va claramente a ${readerName}. Es muy buena leyendo cargas, caminos y energía sutil. Te la paso ahora mismo, cielo.`
-    } else if (topic === 'familia') {
-      textReply = `Para temas de familia y emoción contenida, ${readerName} conecta enseguida. Voy a pasarte con ella para que puedas empezar con calma.`
-    } else if (topic === 'decision') {
-      textReply = `Cuando hay dudas del corazón o decisiones importantes, ${readerName} da mucha claridad. Te la paso ahora mismo para que no pierdas el hilo de lo que sientes.`
-    }
-
-    createHumanTypingSequence('central', textReply, 2400, 'Central está escribiendo...')
-    queueTimeout(() => connectToReader(readerName, topic), 3000)
-  }
-
-  const handleReaderLogic = async (text) => {
-    const lower = normalizeText(text)
-    const currentReaderName = activeReader || 'la tarotista'
-    const currentTargetName = contextMemory.targetName || 'esa persona'
-    const userSign = extractZodiac(text)
-    const targetName = extractPersonName(text)
-
-    if (userSign && !contextMemory.userSign) {
-      setContextMemory((prev) => ({ ...prev, userSign: userSign }))
-    }
-
-    if (targetName && !contextMemory.targetName) {
-      setContextMemory((prev) => ({ ...prev, targetName }))
-    }
-
-    if (readerStage === 'intro') {
-      setReaderStage('awaiting-question')
-      addDelayedMessage(
-        'reader',
-        'Claro cielo, dime tu horóscopo para poder entrar mejor en tu energía y explícame un poquito más la pregunta que quieres mirar conmigo.',
-        2200,
-        `${currentReaderName} está escribiendo...`
-      )
-      return
-    }
-
-    if (readerStage === 'awaiting-question') {
-      if (!isRealQuestion(text)) {
-        addDelayedMessage(
-          'reader',
-          'Te sigo leyendo, cielo. Dame un poquito más de detalle para poder ver exactamente qué quieres consultar.',
-          1800,
-          `${currentReaderName} está escribiendo...`
-        )
-        return
-      }
-
-      const ok = await spendMainQuestion()
-      if (!ok) return
-
-      setMainQuestionCharged(true)
-      setReaderStage('awaiting-target-sign')
-
-      const personText = targetName ? `sobre ${targetName}` : 'sobre esa persona'
-      addDelayedMessage(
-        'reader',
-        `Vamos a mirarlo, cielo. Ya estoy entrando en lo que me preguntas ${personText}. ¿Sabes el horóscopo de ${targetName || 'esa persona'}?`,
-        2600,
-        `${currentReaderName} está escribiendo...`
-      )
-      return
-    }
-
-    if (readerStage === 'awaiting-target-sign') {
-      const targetSign = extractZodiac(text)
-
-      if (targetSign) {
-        setContextMemory((prev) => ({ ...prev, targetSign }))
-      }
-
-      setReaderStage('awaiting-card-choice')
-      addDelayedMessage(
-        'reader',
-        'Perfecto cielo, dime ahora un número del 1 al 22 y elige izquierda, derecha o centro.',
-        1900,
-        `${currentReaderName} está escribiendo...`
-      )
-      return
-    }
-
-    if (readerStage === 'awaiting-card-choice') {
-      setReaderStage('answer-given')
-      createHumanTypingSequence(
-        'reader',
-        `Estoy haciendo la tirada, cielo... Dame un instante porque quiero mirarlo bien. Por lo que me sale en esta lectura, ${currentTargetName !== 'esa persona' ? currentTargetName : 'esa persona'} sí tiene intención de volver a acercarse, pero hay factores que todavía pesan mucho: orgullo, miedo a dar el paso y una energía bastante bloqueada. No veo esto cerrado del todo, pero sí veo que hace falta tiempo y movimiento interno.`,
-        6500,
-        `${currentReaderName} está escribiendo...`
-      )
-      return
-    }
-
-    if (readerStage === 'answer-given') {
-      if (!followupUsed && isFollowupQuestion(text)) {
-        setFollowupUsed(true)
-        addDelayedMessage(
-          'reader',
-          'No cielo, lo que me marca la energía es que el movimiento viene más desde él que desde ti. Ahora bien, si quieres que profundicemos un poco más y miremos lo que todavía no se ha abierto del todo, necesitarás adquirir créditos.',
-          3000,
-          `${currentReaderName} está escribiendo...`
-        )
-        return
-      }
-
-      backToCentral(`Hola ${profile?.display_name || 'cielo'}, ¿cómo te fue con ${currentReaderName}? Si quieres seguir con la consulta, te explico los paquetes de créditos y te vuelvo a pasar con ella en cuanto me digas.`)
-      return
-    }
-
-    backToCentral(`Cielo, para seguir profundizando necesito devolverte con el central y activarte créditos. En cuanto quieras, te lo preparo.`)
+    await showTypingAndAnswer('central', CENTRAL_NAME, `Perfecto cielo, te he dejado la reserva confirmada con ${reservationReader}. ${json.emailSent ? 'Además te llegará un email automático de confirmación.' : 'La reserva ya queda guardada en el sistema.'}`, 1300)
   }
 
   const handleSend = async () => {
     if (!input.trim() || mode === 'connecting') return
-
-    const currentInput = input.trim()
-    pushMessage('client', currentInput)
+    const text = input.trim()
+    await addAndPersist('client', text, profile?.display_name || 'Clienta')
     setInput('')
 
     if (mode === 'central') {
-      handleCentralLogic(currentInput)
+      await answerCentral(text)
       return
     }
 
     if (mode === 'reader') {
-      await handleReaderLogic(currentInput)
+      await answerReader(text)
+      return
     }
   }
 
   const handleLogout = async () => {
+    if (activeReader) {
+      await releaseReader()
+    }
     await supabase.auth.signOut()
     window.location.href = '/auth/login'
   }
@@ -540,44 +521,6 @@ export default function ChatPage() {
     )
   }
 
-  if (step === 'askData') {
-    return (
-      <main style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #f8f5ff, #fff8ef)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-        <div style={{ width: '100%', maxWidth: 560, background: '#ffffff', borderRadius: 24, padding: 32, boxShadow: '0 20px 60px rgba(88, 41, 125, 0.12)', border: '1px solid #f0e3bf' }}>
-          <div style={{ textAlign: 'center', marginBottom: 24 }}>
-            <img src="/logo.png" alt="Tarot Celestial" style={{ width: 88, height: 88, objectFit: 'contain', marginBottom: 16 }} />
-            <h1 style={{ margin: 0, color: '#5b2c83' }}>Bienvenida a Tarot Celestial</h1>
-            <p style={{ color: '#8a6a2f', marginTop: 10 }}>Para poder atenderte, dime tu nombre y el país desde el que me escribes.</p>
-          </div>
-
-          <div style={{ display: 'grid', gap: 14 }}>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Tu nombre"
-              style={{ padding: '14px 16px', borderRadius: 14, border: '1px solid #dccca4' }}
-            />
-            <input
-              value={country}
-              onChange={(e) => setCountry(e.target.value)}
-              placeholder="Tu país"
-              style={{ padding: '14px 16px', borderRadius: 14, border: '1px solid #dccca4' }}
-            />
-            <button
-              onClick={saveProfile}
-              style={{ padding: '14px 18px', borderRadius: 14, border: 'none', background: '#6f3ea8', color: '#fff', fontWeight: 700, cursor: 'pointer' }}
-            >
-              Continuar al chat
-            </button>
-          </div>
-        </div>
-      </main>
-    )
-  }
-
-  const onlineReaders = readers.filter((r) => r.status !== 'Offline')
-  const offlineReaders = readers.filter((r) => r.status === 'Offline')
-
   return (
     <main style={{ height: '100vh', overflow: 'hidden', background: 'linear-gradient(135deg, #f8f5ff, #fff8ef)', padding: 20, boxSizing: 'border-box' }}>
       <div style={{ maxWidth: 1380, height: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column' }}>
@@ -589,11 +532,7 @@ export default function ChatPage() {
               <div style={{ color: '#8a6a2f', fontSize: 14 }}>Siempre a tu lado</div>
             </div>
           </div>
-
-          <button
-            onClick={handleLogout}
-            style={{ border: '1px solid #d8c082', background: '#fff', color: '#6f3ea8', borderRadius: 12, padding: '10px 14px', cursor: 'pointer', fontWeight: 600 }}
-          >
+          <button onClick={handleLogout} style={{ border: '1px solid #d8c082', background: '#fff', color: '#6f3ea8', borderRadius: 12, padding: '10px 14px', cursor: 'pointer', fontWeight: 600 }}>
             Cerrar sesión
           </button>
         </div>
@@ -606,7 +545,11 @@ export default function ChatPage() {
                 <button
                   key={reader.name}
                   disabled={reader.status !== 'Libre'}
-                  onClick={() => reader.status === 'Libre' && connectToReader(reader.name, 'manual')}
+                  onClick={async () => {
+                    if (reader.status !== 'Libre') return
+                    setPendingTransfer(reader.name)
+                    await showTypingAndAnswer('central', CENTRAL_NAME, `Mira cielo, ahora mismo tengo libre a ${reader.name}, que ${reader.description}. Si quieres, te paso con ${reader.name}.`, 1400)
+                  }}
                   style={{
                     padding: 12,
                     borderRadius: 14,
@@ -641,7 +584,7 @@ export default function ChatPage() {
           <section style={{ background: '#fff', borderRadius: 22, boxShadow: '0 12px 30px rgba(88, 41, 125, 0.08)', border: '1px solid #efe1bc', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
             <div style={{ padding: 18, borderBottom: '1px solid #f1e7cd', flexShrink: 0 }}>
               <div style={{ color: '#5b2c83', fontWeight: 800, fontSize: 20 }}>
-                {mode === 'reader' ? activeReader : mode === 'connecting' ? `Conectando con ${activeReader}...` : 'Central Tarot Celestial'}
+                {mode === 'reader' ? activeReader : mode === 'connecting' ? `Conectando con ${activeReader}...` : `${CENTRAL_NAME} · Central Tarot Celestial`}
               </div>
               <div style={{ color: '#8a6a2f', fontSize: 14 }}>
                 {profile?.display_name ? `Atendiendo a ${profile.display_name}${profile.country ? ` · ${profile.country}` : ''}` : 'Atención personalizada'}
@@ -653,82 +596,58 @@ export default function ChatPage() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
                   <select value={reservationReader} onChange={(e) => setReservationReader(e.target.value)} style={{ padding: 12, borderRadius: 12, border: '1px solid #dccca4' }}>
                     <option value="">Tarotista</option>
-                    {READER_CATALOG.map((reader) => <option key={reader.name} value={reader.name}>{reader.name}</option>)}
+                    {READERS.map((reader) => <option key={reader.name} value={reader.name}>{reader.name}</option>)}
                   </select>
                   <input type="date" value={reservationDay} onChange={(e) => setReservationDay(e.target.value)} style={{ padding: 12, borderRadius: 12, border: '1px solid #dccca4' }} />
                   <input type="time" value={reservationTime} onChange={(e) => setReservationTime(e.target.value)} style={{ padding: 12, borderRadius: 12, border: '1px solid #dccca4' }} />
                 </div>
-                <textarea
-                  value={reservationNote}
-                  onChange={(e) => setReservationNote(e.target.value)}
-                  placeholder="Notas opcionales para la reserva"
-                  style={{ width: '100%', minHeight: 80, padding: 12, borderRadius: 12, border: '1px solid #dccca4', boxSizing: 'border-box', marginBottom: 10 }}
-                />
+                <textarea value={reservationNote} onChange={(e) => setReservationNote(e.target.value)} placeholder="Notas opcionales para la reserva" style={{ width: '100%', minHeight: 80, padding: 12, borderRadius: 12, border: '1px solid #dccca4', boxSizing: 'border-box', marginBottom: 10 }} />
                 <div style={{ display: 'flex', gap: 10 }}>
-                  <button onClick={createReservation} style={{ padding: '12px 16px', borderRadius: 12, border: 'none', background: '#6f3ea8', color: '#fff', fontWeight: 800, cursor: 'pointer' }}>
-                    Confirmar reserva
-                  </button>
-                  <button onClick={() => setReservationMode(false)} style={{ padding: '12px 16px', borderRadius: 12, border: '1px solid #dccca4', background: '#fff', color: '#6f3ea8', fontWeight: 800, cursor: 'pointer' }}>
-                    Cancelar
-                  </button>
+                  <button onClick={submitReservation} style={{ padding: '12px 16px', borderRadius: 12, border: 'none', background: '#6f3ea8', color: '#fff', fontWeight: 800, cursor: 'pointer' }}>Confirmar reserva</button>
+                  <button onClick={() => setReservationMode(false)} style={{ padding: '12px 16px', borderRadius: 12, border: '1px solid #dccca4', background: '#fff', color: '#6f3ea8', fontWeight: 800, cursor: 'pointer' }}>Cancelar</button>
                 </div>
               </div>
             )}
 
-            <div ref={messagesRef} onScroll={onMessagesScroll} style={{ flex: 1, minHeight: 0, padding: 18, overflowY: 'auto', display: 'grid', gap: 12 }}>
+            <div ref={scrollRef} onScroll={onScroll} style={{ flex: 1, minHeight: 0, padding: 18, overflowY: 'auto', display: 'grid', gap: 10 }}>
               {mode === 'connecting' ? (
-                <div style={{ textAlign: 'center', color: '#8a6a2f', fontWeight: 700 }}>
+                <div style={{ textAlign: 'center', color: '#8a6a2f', fontWeight: 700, marginTop: 10 }}>
                   Conectando con {activeReader}, un momento...
                 </div>
               ) : (
-                messages.map((message, index) => {
-                  const isClient = message.sender === 'client'
-                  const isReader = message.sender === 'reader'
+                messages.map((m, idx) => {
+                  const isClient = m.sender === 'client'
+                  const senderLabel = isClient ? '' : m.sender_name || (m.sender === 'central' ? CENTRAL_NAME : activeReader || 'Tarotista')
                   return (
-                    <div key={index} style={{ display: 'flex', justifyContent: isClient ? 'flex-end' : 'flex-start' }}>
+                    <div key={m.id || idx} style={{ display: 'flex', justifyContent: isClient ? 'flex-end' : 'flex-start' }}>
                       <div style={{
-                        maxWidth: '75%',
-                        padding: '14px 16px',
-                        borderRadius: 18,
+                        maxWidth: '66%',
+                        padding: '12px 14px',
+                        borderRadius: 16,
                         background: isClient ? '#6f3ea8' : '#faf6ff',
                         color: isClient ? '#fff' : '#4b2a67',
                         border: isClient ? 'none' : '1px solid #eadcf8'
                       }}>
-                        {!isClient && (
-                          <div style={{ fontSize: 12, fontWeight: 700, color: '#8a6a2f', marginBottom: 6 }}>
-                            {isReader ? activeReader?.toUpperCase() : 'CENTRAL'}
-                          </div>
-                        )}
-                        <div style={{ lineHeight: 1.6 }}>{message.text}</div>
+                        {!isClient && <div style={{ fontSize: 11, fontWeight: 700, color: '#8a6a2f', marginBottom: 5 }}>{String(senderLabel).toUpperCase()}</div>}
+                        <div style={{ lineHeight: 1.5, fontSize: 15 }}>{m.text}</div>
                       </div>
                     </div>
                   )
                 })
               )}
 
-              {isTyping && (
+              {!!typing && (
                 <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
-                  <div style={{ background: '#faf6ff', border: '1px solid #eadcf8', borderRadius: 18, padding: '12px 16px', color: '#7a6690' }}>
-                    {typingLabel}
+                  <div style={{ background: '#faf6ff', border: '1px solid #eadcf8', borderRadius: 16, padding: '10px 14px', color: '#7a6690' }}>
+                    {typing}
                   </div>
                 </div>
               )}
             </div>
 
             <div style={{ padding: 18, borderTop: '1px solid #f1e7cd', display: 'flex', gap: 12, flexShrink: 0 }}>
-              <input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleSend() }}
-                placeholder={mode === 'reader' ? 'Escribe tu consulta...' : 'Escribe aquí tu mensaje...'}
-                style={{ flex: 1, padding: '14px 16px', borderRadius: 16, border: '1px solid #dccca4', outline: 'none' }}
-              />
-              <button
-                onClick={handleSend}
-                style={{ padding: '14px 18px', borderRadius: 16, border: 'none', background: '#6f3ea8', color: '#fff', fontWeight: 700, cursor: 'pointer' }}
-              >
-                Enviar
-              </button>
+              <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSend()} placeholder={mode === 'reader' ? 'Escribe tu consulta...' : 'Escribe aquí tu mensaje...'} style={{ flex: 1, padding: '14px 16px', borderRadius: 16, border: '1px solid #dccca4', outline: 'none' }} />
+              <button onClick={handleSend} style={{ padding: '14px 18px', borderRadius: 16, border: 'none', background: '#6f3ea8', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>Enviar</button>
             </div>
           </section>
 
@@ -737,44 +656,23 @@ export default function ChatPage() {
             <div style={{ padding: 16, borderRadius: 16, background: '#fffaf1', border: '1px solid #f0dfb2', marginBottom: 14 }}>
               <div style={{ color: '#8a6a2f', fontSize: 13 }}>Saldo actual</div>
               <div style={{ color: '#5b2c83', fontSize: 30, fontWeight: 800, marginTop: 4 }}>{credits}</div>
-              <div style={{ color: '#8c7a58', fontSize: 13 }}>
-                {freeQuestionUsed ? 'La consulta gratis ya está usada' : 'Incluye tu primera consulta gratuita'}
-              </div>
+              <div style={{ color: '#8c7a58', fontSize: 13 }}>{freeQuestionUsed ? 'La consulta gratis ya está usada' : 'Incluye tu primera consulta gratuita'}</div>
             </div>
 
-            <a href="/payment" style={{
-              display: 'block',
-              textAlign: 'center',
-              width: '100%',
-              padding: '14px 16px',
-              borderRadius: 14,
-              background: '#d6ad45',
-              color: '#fff',
-              fontWeight: 800,
-              cursor: 'pointer',
-              marginBottom: 10,
-              textDecoration: 'none',
-              boxSizing: 'border-box'
-            }}>
+            <a href="/payment" style={{ display: 'block', textAlign: 'center', width: '100%', padding: '14px 16px', borderRadius: 14, background: '#d6ad45', color: '#fff', fontWeight: 800, cursor: 'pointer', marginBottom: 10, textDecoration: 'none', boxSizing: 'border-box' }}>
               Comprar créditos
             </a>
 
-            <button
-              onClick={() => backToCentral()}
-              style={{ width: '100%', padding: '14px 16px', borderRadius: 14, border: '1px solid #dccca4', background: '#fff', color: '#6f3ea8', fontWeight: 800, cursor: 'pointer', marginBottom: 10 }}
-            >
+            <button onClick={async () => {
+              if (activeReader) await releaseReader()
+              setActiveReader(null)
+              setMode('central')
+              await addAndPersist('central', `Hola ${profile.display_name}, ya estoy otra vez contigo. Dime qué necesitas y te ayudo encantada.`, CENTRAL_NAME)
+            }} style={{ width: '100%', padding: '14px 16px', borderRadius: 14, border: '1px solid #dccca4', background: '#fff', color: '#6f3ea8', fontWeight: 800, cursor: 'pointer', marginBottom: 10 }}>
               Volver con el central
             </button>
 
-            <button
-              onClick={() => {
-                setReservationMode(true)
-                if (mode !== 'central') {
-                  backToCentral('Perfecto cielo 💫 te llevo con el central para dejarte la reserva preparada.')
-                }
-              }}
-              style={{ width: '100%', padding: '14px 16px', borderRadius: 14, border: '1px solid #dccca4', background: '#fff', color: '#6f3ea8', fontWeight: 800, cursor: 'pointer', marginBottom: 10 }}
-            >
+            <button onClick={() => setReservationMode(true)} style={{ width: '100%', padding: '14px 16px', borderRadius: 14, border: '1px solid #dccca4', background: '#fff', color: '#6f3ea8', fontWeight: 800, cursor: 'pointer', marginBottom: 10 }}>
               Reservar consulta
             </button>
 

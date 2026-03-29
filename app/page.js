@@ -6,8 +6,7 @@ export default function HomePage() {
       alignItems: 'center',
       justifyContent: 'center',
       background: 'linear-gradient(135deg, #f8f5ff, #fff8ef)',
-      padding: 24,
-      boxSizing: 'border-box'
+      padding: 24
     }}>
       <div style={{
         width: '100%',
@@ -23,9 +22,7 @@ export default function HomePage() {
         <h1 style={{ color: '#5b2c83', fontSize: 38, marginBottom: 10 }}>
           Bienvenido al chat de Tarot Celestial
         </h1>
-        <p style={{ color: '#8a6a2f', fontSize: 18, marginTop: 0 }}>
-          Siempre a tu lado
-        </p>
+        <p style={{ color: '#8a6a2f', fontSize: 18, marginTop: 0 }}>Siempre a tu lado</p>
 
         <div style={{ marginTop: 28, display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap' }}>
           <a href="/auth/login" style={{
@@ -49,19 +46,6 @@ export default function HomePage() {
           }}>
             Registrarse
           </a>
-        </div>
-
-        <div style={{
-          marginTop: 24,
-          background: '#fffaf1',
-          border: '1px solid #f0dfb2',
-          borderRadius: 18,
-          padding: 18,
-          color: '#6d5832',
-          lineHeight: 1.7
-        }}>
-          Entra, habla primero con el central, elige tarotista, disfruta de tu consulta gratis
-          y continúa con créditos cuando quieras profundizar un poco más.
         </div>
       </div>
     </main>
