@@ -835,17 +835,8 @@ export default function ChatPage() {
     }
 
     if (stage === 'followup-used') {
-      await releaseReader()
-      setMode('central')
-      setActiveReader(null)
-      await showTypingAndAnswer(
-        'central',
-        CENTRAL_NAME,
-        `Cielo, si quieres seguir profundizando con ${memory.lastReader || 'tu tarotista'}, te activo créditos y te la vuelvo a pasar en cuanto me digas.`,
-        1400
-      )
-      return
-    }
+  return
+}
   }
 
   const submitReservation = async () => {
