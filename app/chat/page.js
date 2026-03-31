@@ -89,6 +89,18 @@ export default function ChatPage() {
     console.error('Error guardando mensaje', e)
   }
 }
+
+const addAndPersist = async (sender, text, senderName) => {
+  const message = {
+    id: crypto.randomUUID(),
+    sender,
+    sender_name: senderName,
+    text
+  }
+
+  addLocalMessage(message)
+  await persistMessage(message)
+}  
   
   const showTypingAndAnswer = async (sender, senderName, text, minDelay = 1500) => {
     const label = sender === 'reader'
