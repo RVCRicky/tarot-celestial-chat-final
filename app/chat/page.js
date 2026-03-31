@@ -1,4 +1,5 @@
 'use client'
+
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import {
@@ -21,6 +22,225 @@ function readerGreeting(name) {
   return reader
     ? `Hola cielo, soy ${name} de Tarot Celestial. ${reader.description} Estoy contigo, cuéntame con calma en qué te puedo ayudar hoy.`
     : `Hola cielo, soy ${name} de Tarot Celestial. Estoy contigo, cuéntame con calma en qué te puedo ayudar hoy.`
+}
+
+function stripMarkdown(value) {
+  return (value || '')
+    .replace(/\*\*/g, '')
+    .replace(/\*/g, '')
+    .replace(/`/g, '')
+    .replace(/#{1,6}\s?/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+function includesAny(text, list) {
+  return list.some((item) => text.includes(item))
+}
+
+function buildControlledCentralReply({ text, available, chosenReader, profileName }) {
+  const lower = normalizeText(text)
+
+  const isLove = includesAny(lower, [
+    'amor',
+    'pareja',
+    'relacion',
+    'relación',
+    'ex',
+    'volver',
+    'celos',
+    'infidel',
+    'tercera persona',
+    'reconcili'
+  ])
+
+  const isWork = includesAny(lower, [
+    'trabajo',
+    'dinero',
+    'econom',
+    'laboral',
+    'negocio',
+    'empleo',
+    'empresa',
+    'jefe',
+    'ascenso'
+  ])
+
+  const isEnergy = includesAny(lower, [
+    'energia',
+    'energía',
+    'bloqueo',
+    'espiritual',
+    'camino',
+    'mal de ojo',
+    'limpieza',
+    'vibra',
+    'ansiedad',
+    'agobio'
+  ])
+
+  const isFamily = includesAny(lower, [
+    'familia',
+    'madre',
+    'padre',
+    'hijo',
+    'hija',
+    'hermano',
+    'hermana'
+  ])
+
+  const asksBest = includesAny(lower, [
+    'cual es la mejor',
+    'cuál es la mejor',
+    'cual me recomiendas',
+    'cuál me recomiendas',
+    'quien me recomiendas',
+    'quién me recomiendas',
+    'cual es la que mas gusta',
+    'cuál es la que más gusta'
+  ])
+
+  if (!chosenReader) {
+    return 'Ahora mismo están todas ocupadas cielo... si quieres te aviso en cuanto se libere una.'
+  }
+
+  if (isLove) {
+    return `Para lo que me estás diciendo de amor, la que más te encaja ahora mismo es ${chosenReader.name}. ${chosenReader.description} Lo noto bastante claro en tu caso. Si quieres, te paso con ella.`
+  }
+
+  if (isWork) {
+    return `Para lo que me estás contando de trabajo y estabilidad, la que más te encaja ahora mismo es ${chosenReader.name}. ${chosenReader.description} Si quieres, te paso con ella.`
+  }
+
+  if (isEnergy) {
+    return `Para lo que me estás contando de energía y bloqueo, la que mejor te puede mirar esto ahora mismo es ${chosenReader.name}. ${chosenReader.description} Si quieres, te paso con ella.`
+  }
+
+  if (isFamily) {
+    return `Para este tema familiar, la que mejor te puede ayudar ahora mismo es ${chosenReader.name}. ${chosenReader.description} Si quieres, te paso con ella.`
+  }
+
+  if (asksBest) {
+    return `De las que tengo libres ahora mismo, la que más te recomendaría es ${chosenReader.name}. ${chosenReader.description} Si quieres, te paso con ella.`
+  }
+
+  return `Mm... por lo que me estás diciendo, siento que la que mejor te puede ayudar ahora mismo es ${chosenReader.name}. ${chosenReader.description} Si quieres, te paso con ella.`
+}
+
+function shouldUseAIForCentral(text) {
+  const lower = normalizeText(text)
+
+  const fullyControlled = [
+    'quien tienes',
+    'quién tienes',
+    'disponible',
+    'disponibles',
+    'cual me recomiendas',
+    'cuál me recomiendas',
+    'cual es la mejor',
+    'cuál es la mejor',
+    'amor',
+    'pareja',
+    'relacion',
+    'relación',
+    'ex',
+    'volver',
+    'trabajo',
+    'dinero',
+    'econom',
+    'bloqueo',
+    'energia',
+    'energía',
+    'precio',
+    'credit',
+    'pagar',
+    'reserv',
+    'cita'
+  ]
+
+  return !includesAny(lower, fullyControlled)
+}
+
+function isAffirmative(text) {
+  const lower = normalizeText(text)
+  return (
+    includesAny(lower, [
+      'si',
+      'sí',
+      'vale',
+      'ok',
+      'perfecto',
+      'claro',
+      'de acuerdo',
+      'hazlo',
+      'pásame',
+      'pasame',
+      'quiero hablar con ella',
+      'quiero con ella',
+      'dale',
+      'adelante'
+    ]) && !includesAny(lower, ['no', 'todavia no', 'todavía no', 'mejor no'])
+  )
+}
+
+function isNegative(text) {
+  const lower = normalizeText(text)
+  return includesAny(lower, [
+    'no',
+    'mejor no',
+    'espera',
+    'todavia no',
+    'todavía no',
+    'aun no',
+    'aún no'
+  ])
+}
+
+function chooseReaderForTopic(topic, availableReaders, rawText = '') {
+  const lower = normalizeText(rawText)
+
+  const findPreferred = (names) =>
+    availableReaders.find((r) => names.includes(r.name)) || null
+
+  if (includesAny(lower, ['amor', 'pareja', 'ex', 'volver', 'reconcili', 'celos', 'infidel'])) {
+    return (
+      findPreferred(['Aurora', 'Candela', 'Violeta', 'Rocío', 'Sara', 'Alma']) ||
+      availableReaders[0] ||
+      null
+    )
+  }
+
+  if (includesAny(lower, ['trabajo', 'dinero', 'econom', 'laboral', 'negocio', 'empleo'])) {
+    return (
+      findPreferred(['María', 'Estela', 'Noa', 'Nerea']) ||
+      availableReaders[0] ||
+      null
+    )
+  }
+
+  if (includesAny(lower, ['energia', 'energía', 'espiritual', 'bloqueo', 'camino', 'ansiedad', 'agobio'])) {
+    return (
+      findPreferred(['Luna', 'Alma', 'Mara', 'Noa']) ||
+      availableReaders[0] ||
+      null
+    )
+  }
+
+  if (includesAny(lower, ['familia', 'madre', 'padre', 'hijo', 'hija', 'hermano', 'hermana'])) {
+    return (
+      findPreferred(['María', 'Noa', 'Sara', 'Alma']) ||
+      availableReaders[0] ||
+      null
+    )
+  }
+
+  const byTopicName = recommendedReader(topic, availableReaders)
+  if (byTopicName) {
+    const reader = availableReaders.find((r) => r.name === byTopicName)
+    if (reader) return reader
+  }
+
+  return availableReaders[0] || null
 }
 
 export default function ChatPage() {
@@ -74,7 +294,6 @@ export default function ChatPage() {
       )
 
       if (exists) return prev
-
       return [...prev, message]
     })
   }
@@ -129,18 +348,20 @@ export default function ChatPage() {
   }
 
   const showTypingAndAnswer = async (sender, senderName, text, minDelay = 1500) => {
+    const cleanText = stripMarkdown(text)
+
     const label = sender === 'reader'
       ? `${senderName || activeReader || 'Tarotista'} está escribiendo...`
       : `${senderName || CENTRAL_NAME} está escribiendo...`
 
     setTyping(label)
-    const total = estimateTypingMs(text, minDelay, 34, minDelay, 10000)
+    const total = estimateTypingMs(cleanText, minDelay, 34, minDelay, 10000)
 
     queue(() => setTyping(''), Math.floor(total * 0.45))
     queue(() => setTyping(label), Math.floor(total * 0.62))
     queue(async () => {
       setTyping('')
-      await addAndPersist(sender, text, senderName)
+      await addAndPersist(sender, cleanText, senderName)
     }, total)
   }
 
@@ -255,6 +476,7 @@ export default function ChatPage() {
     const messagesPoll = setInterval(() => fetchMessages(session.id), 3500)
     const readersPoll = setInterval(fetchReaders, 6000)
     const beat = setInterval(() => heartbeat(mode, activeReader), 15000)
+
     return () => {
       clearInterval(messagesPoll)
       clearInterval(readersPoll)
@@ -304,7 +526,7 @@ export default function ChatPage() {
       const json = await res.json()
       if (!res.ok) return null
 
-      return json.text || null
+      return stripMarkdown(json.text || '')
     } catch {
       return null
     }
@@ -413,22 +635,20 @@ export default function ChatPage() {
       return
     }
 
-    if (pendingTransfer) {
-      if (['si', 'sí', 'vale', 'ok', 'perfecto', 'claro', 'de acuerdo'].includes(lower)) {
-        await beginTransfer(pendingTransfer)
-        return
-      }
+    if (pendingTransfer && isAffirmative(text)) {
+      await beginTransfer(pendingTransfer)
+      return
+    }
 
-      if (['no', 'mejor no', 'espera'].includes(lower)) {
-        setPendingTransfer(null)
-        await showTypingAndAnswer(
-          'central',
-          CENTRAL_NAME,
-          'Claro cielo, no pasa nada. Dime qué prefieres y lo vemos juntas.',
-          1200
-        )
-        return
-      }
+    if (pendingTransfer && isNegative(text)) {
+      setPendingTransfer(null)
+      await showTypingAndAnswer(
+        'central',
+        CENTRAL_NAME,
+        'Claro cielo, no pasa nada. Dime qué prefieres y lo vemos juntas.',
+        1200
+      )
+      return
     }
 
     if (lower.includes('precio') || lower.includes('credit') || lower.includes('pagar')) {
@@ -465,95 +685,28 @@ export default function ChatPage() {
       return
     }
 
-    const isLove =
-      lower.includes('amor') ||
-      lower.includes('pareja') ||
-      lower.includes('relacion') ||
-      lower.includes('relación') ||
-      lower.includes('ex') ||
-      lower.includes('volver') ||
-      lower.includes('celos') ||
-      lower.includes('infidel')
-
-    const isWork =
-      lower.includes('trabajo') ||
-      lower.includes('dinero') ||
-      lower.includes('econom') ||
-      lower.includes('laboral')
-
-    const isEnergy =
-      lower.includes('energia') ||
-      lower.includes('energía') ||
-      lower.includes('espiritual') ||
-      lower.includes('bloqueo') ||
-      lower.includes('camino')
-
-    const asksBest =
-      lower.includes('cual es la mejor') ||
-      lower.includes('cuál es la mejor') ||
-      lower.includes('cual es la que mas gusta') ||
-      lower.includes('cuál es la que más gusta') ||
-      lower.includes('cual me recomiendas') ||
-      lower.includes('cuál me recomiendas')
-
     const topic = topicFromText(text)
-    let suggested = recommendedReader(topic, available)
+    const chosenReader = chooseReaderForTopic(topic, available, text)
+    const baseReply = buildControlledCentralReply({
+      text,
+      available,
+      chosenReader,
+      profileName: profile?.display_name || ''
+    })
 
-    if (!suggested) {
-      suggested = available[0]?.name
-    }
-
-    if (isLove) {
-      const preferred = available.find((r) =>
-        ['Aurora', 'Candela', 'Violeta', 'Rocío', 'Sara', 'Alma'].includes(r.name)
-      )
-      if (preferred) suggested = preferred.name
-    }
-
-    if (isWork) {
-      const preferred = available.find((r) =>
-        ['María', 'Estela', 'Noa', 'Nerea'].includes(r.name)
-      )
-      if (preferred) suggested = preferred.name
-    }
-
-    if (isEnergy) {
-      const preferred = available.find((r) =>
-        ['Luna', 'Alma', 'Mara', 'Noa'].includes(r.name)
-      )
-      if (preferred) suggested = preferred.name
-    }
-
-    const reader = available.find((r) => r.name === suggested) || available[0]
-    setMemory((prev) => ({ ...prev, topic }))
-
-    let baseReply = ''
-
-    if (isLove) {
-      baseReply = `Para lo que me estás diciendo de amor, la que más te encaja ahora mismo es ${reader.name}. ${reader.description} Lo noto bastante claro en tu caso. Si quieres, te paso con ella.`
-    } else if (isWork) {
-      baseReply = `Para temas de trabajo y estabilidad, la que más te encaja ahora mismo es ${reader.name}. ${reader.description} Si quieres, te paso con ella.`
-    } else if (isEnergy) {
-      baseReply = `Para lo que me estás contando de energía y bloqueo, la que mejor te puede mirar esto ahora mismo es ${reader.name}. ${reader.description} Si quieres, te paso con ella.`
-    } else if (asksBest) {
-      baseReply = `De las que tengo libres ahora mismo, la que más te recomendaría es ${reader.name}. ${reader.description} Si quieres, te paso con ella.`
-    } else {
-      baseReply = `Mm... por lo que me estás diciendo, siento que la que mejor te puede ayudar ahora mismo es ${reader.name}. ${reader.description} Si quieres, te paso con ella.`
-    }
-
-    const ai = await askAI('central', text, available)
     let reply = baseReply
 
-// SOLO usar IA si NO es un caso claro
-if (!isLove && !isWork && !isEnergy && !asksBest) {
-  const ai = await askAI('central', text, available)
+    if (shouldUseAIForCentral(text)) {
+      const ai = await askAI('central', text, available)
+      if (ai && ai.length > 40 && chosenReader?.name) {
+        reply = `${ai}\n\nDe todas formas, sinceramente, para lo tuyo te recomiendo a ${chosenReader.name}. Si quieres, te paso con ella.`
+      }
+    }
 
-  if (ai && ai.length > 40) {
-    reply = `${ai}\n\nDe todas formas, sinceramente, para lo tuyo te recomiendo a ${reader.name}. Si quieres, te paso con ella.`
-  }
-}
+    if (chosenReader?.name) {
+      setPendingTransfer(chosenReader.name)
+    }
 
-    setPendingTransfer(reader.name)
     await showTypingAndAnswer('central', CENTRAL_NAME, reply, 1700)
   }
 
@@ -725,6 +878,7 @@ if (!isLove && !isWork && !isEnergy && !asksBest) {
 
   const handleSend = async () => {
     if (!input.trim() || mode === 'connecting') return
+
     const text = input.trim()
     await addAndPersist('client', text, profile?.display_name || 'Clienta')
     setInput('')
@@ -886,8 +1040,16 @@ if (!isLove && !isWork && !isEnergy && !asksBest) {
             </div>
 
             <div style={{ padding: 18, borderTop: '1px solid #f1e7cd', display: 'flex', gap: 12, flexShrink: 0 }}>
-              <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSend()} placeholder={mode === 'reader' ? 'Escribe tu consulta...' : 'Escribe aquí tu mensaje...'} style={{ flex: 1, padding: '14px 16px', borderRadius: 16, border: '1px solid #dccca4', outline: 'none' }} />
-              <button onClick={handleSend} style={{ padding: '14px 18px', borderRadius: 16, border: 'none', background: '#6f3ea8', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>Enviar</button>
+              <input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                placeholder={mode === 'reader' ? 'Escribe tu consulta...' : 'Escribe aquí tu mensaje...'}
+                style={{ flex: 1, padding: '14px 16px', borderRadius: 16, border: '1px solid #dccca4', outline: 'none' }}
+              />
+              <button onClick={handleSend} style={{ padding: '14px 18px', borderRadius: 16, border: 'none', background: '#6f3ea8', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+                Enviar
+              </button>
             </div>
           </section>
 
@@ -903,12 +1065,15 @@ if (!isLove && !isWork && !isEnergy && !asksBest) {
               Comprar créditos
             </a>
 
-            <button onClick={async () => {
-              if (activeReader) await releaseReader()
-              setActiveReader(null)
-              setMode('central')
-              await addAndPersist('central', `Hola ${profile.display_name}, ya estoy otra vez contigo. Dime qué necesitas y te ayudo encantada.`, CENTRAL_NAME)
-            }} style={{ width: '100%', padding: '14px 16px', borderRadius: 14, border: '1px solid #dccca4', background: '#fff', color: '#6f3ea8', fontWeight: 800, cursor: 'pointer', marginBottom: 10 }}>
+            <button
+              onClick={async () => {
+                if (activeReader) await releaseReader()
+                setActiveReader(null)
+                setMode('central')
+                await addAndPersist('central', `Hola ${profile.display_name}, ya estoy otra vez contigo. Dime qué necesitas y te ayudo encantada.`, CENTRAL_NAME)
+              }}
+              style={{ width: '100%', padding: '14px 16px', borderRadius: 14, border: '1px solid #dccca4', background: '#fff', color: '#6f3ea8', fontWeight: 800, cursor: 'pointer', marginBottom: 10 }}
+            >
               Volver con el central
             </button>
 
