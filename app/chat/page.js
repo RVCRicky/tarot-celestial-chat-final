@@ -484,22 +484,16 @@ si me dices qué quieres mirar exactamente, te recomiendo la mejor para ti`,
 
     const reader = available.find((r) => r.name === suggested) || available[0]
 
-    setMemory((prev) => ({ ...prev, topic }))
+// 🔥 SIEMPRE CONTROL HUMANO
+let reply = `mm... por lo que me estás diciendo...
 
-    let reply = await askAI('central', text, available)
-
-    if (!reply || reply.length < 20) {
-      reply = `mm... por lo que me estás diciendo...
-
-siento que esto es importante para ti.
+siento que esto es bastante importante para ti.
 
 mira, ahora mismo tengo libre a ${reader.name}, que ${reader.description}.
 
 no sé por qué, pero me da que puede ayudarte bastante con esto.
 
 si quieres, te paso con ella`
-    }
-
     if (reader?.name) {
       setPendingTransfer(reader.name)
     }
