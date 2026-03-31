@@ -53,6 +53,7 @@ export default function ChatPage() {
   const scrollRef = useRef(null)
   const shouldStickRef = useRef(true)
   const timersRef = useRef([])
+  const sessionRef = useRef(null)
 
   const onlineReaders = useMemo(() => readers.filter((r) => r.status !== 'Offline'), [readers])
   const offlineReaders = useMemo(() => readers.filter((r) => r.status === 'Offline'), [readers])
@@ -86,13 +87,14 @@ export default function ChatPage() {
 
   const persistMessage = async (sender, text, senderName = null) => {
     try {
-      if (!session?.id) return null
+      const currentSessionId = sessionRef.current?.id || session?.id
+      if (!currentSessionId) return null
 
       const res = await fetch('/api/session/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sessionId: session.id,
+          sessionId: currentSessionId,
           sender,
           text,
           senderName
@@ -175,12 +177,14 @@ export default function ChatPage() {
   }
 
   const heartbeat = async (currentMode, currentReaderName) => {
-    if (!session?.id) return
+    const currentSessionId = sessionRef.current?.id || session?.id
+    if (!currentSessionId) return
+
     await fetch('/api/session/heartbeat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        sessionId: session.id,
+        sessionId: currentSessionId,
         mode: currentMode,
         currentReaderName: currentReaderName || null
       })
@@ -218,6 +222,7 @@ export default function ChatPage() {
       })
       const sessionJson = await sessionRes.json()
       setSession(sessionJson.session)
+      sessionRef.current = sessionJson.session
 
       await fetchReaders()
       const existingMessages = await fetchMessages(sessionJson.session.id)
@@ -281,7 +286,10 @@ export default function ChatPage() {
           role,
           profileName: profile?.display_name || '',
           country: profile?.country || '',
-          conversation: messages.slice(-12).map((m) => ({ sender: m.sender || m.sender_name || 'system', text: m.text })),
+          conversation: messages.slice(-12).map((m) => ({
+            sender: m.sender || m.sender_name || 'system',
+            text: m.text
+          })),
           latestUserMessage,
           availableReaders: availableReadersList,
           memory: {
@@ -292,8 +300,10 @@ export default function ChatPage() {
           }
         })
       })
+
       const json = await res.json()
       if (!res.ok) return null
+
       return json.text || null
     } catch {
       return null
@@ -327,13 +337,15 @@ export default function ChatPage() {
     const randomDelay = 6000 + Math.floor(Math.random() * 14000)
 
     queue(async () => {
+      const currentSessionId = sessionRef.current?.id || session?.id
+
       const res = await fetch('/api/readers/claim', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           readerName,
           profileId: profile.id,
-          sessionId: session.id
+          sessionId: currentSessionId
         })
       })
       const json = await res.json()
@@ -365,11 +377,13 @@ export default function ChatPage() {
 
   const releaseReader = async () => {
     if (!activeReader) return
+
     await fetch('/api/readers/release', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ readerName: activeReader })
     })
+
     await fetchReaders()
   }
 
@@ -389,14 +403,11 @@ export default function ChatPage() {
         return
       }
 
-      const names = available.map(r => r.name).join(', ')
-
+      const names = available.map((r) => r.name).join(', ')
       await showTypingAndAnswer(
         'central',
         CENTRAL_NAME,
-        `ahora mismo tengo a ${names} disponibles...
-
-si me dices qué quieres mirar exactamente, te recomiendo la mejor para ti`,
+        `Ahora mismo tengo a ${names} disponibles. Si me dices un poco qué tema quieres mirar, te recomiendo la mejor para ti.`,
         1400
       )
       return
@@ -407,6 +418,7 @@ si me dices qué quieres mirar exactamente, te recomiendo la mejor para ti`,
         await beginTransfer(pendingTransfer)
         return
       }
+
       if (['no', 'mejor no', 'espera'].includes(lower)) {
         setPendingTransfer(null)
         await showTypingAndAnswer(
@@ -441,29 +453,6 @@ si me dices qué quieres mirar exactamente, te recomiendo la mejor para ti`,
       return
     }
 
-    if (
-      lower.includes('cual es la mejor') ||
-      lower.includes('cuál es la mejor') ||
-      lower.includes('cual es la que mas gusta') ||
-      lower.includes('cuál es la que más gusta') ||
-      lower.includes('cual me recomiendas') ||
-      lower.includes('cuál me recomiendas')
-    ) {
-      const available = readers.filter((r) => r.status === 'Libre')
-      const ai = await askAI('central', text, available)
-      await showTypingAndAnswer(
-        'central',
-        CENTRAL_NAME,
-        ai || `De las que tengo libres ahora mismo, ${available[0]?.name || 'Aurora'} es de las que más gustan. Si quieres, te paso con ella.`,
-        1600
-      )
-      if (available[0]?.name) {
-        setPendingTransfer(available[0].name)
-      }
-      return
-    }
-
-    const topic = topicFromText(text)
     const available = readers.filter((r) => r.status === 'Libre')
 
     if (!available.length) {
@@ -476,28 +465,90 @@ si me dices qué quieres mirar exactamente, te recomiendo la mejor para ti`,
       return
     }
 
+    const isLove =
+      lower.includes('amor') ||
+      lower.includes('pareja') ||
+      lower.includes('relacion') ||
+      lower.includes('relación') ||
+      lower.includes('ex') ||
+      lower.includes('volver') ||
+      lower.includes('celos') ||
+      lower.includes('infidel')
+
+    const isWork =
+      lower.includes('trabajo') ||
+      lower.includes('dinero') ||
+      lower.includes('econom') ||
+      lower.includes('laboral')
+
+    const isEnergy =
+      lower.includes('energia') ||
+      lower.includes('energía') ||
+      lower.includes('espiritual') ||
+      lower.includes('bloqueo') ||
+      lower.includes('camino')
+
+    const asksBest =
+      lower.includes('cual es la mejor') ||
+      lower.includes('cuál es la mejor') ||
+      lower.includes('cual es la que mas gusta') ||
+      lower.includes('cuál es la que más gusta') ||
+      lower.includes('cual me recomiendas') ||
+      lower.includes('cuál me recomiendas')
+
+    const topic = topicFromText(text)
     let suggested = recommendedReader(topic, available)
 
     if (!suggested) {
-      suggested = available[Math.floor(Math.random() * available.length)].name
+      suggested = available[0]?.name
+    }
+
+    if (isLove) {
+      const preferred = available.find((r) =>
+        ['Aurora', 'Candela', 'Violeta', 'Rocío', 'Sara', 'Alma'].includes(r.name)
+      )
+      if (preferred) suggested = preferred.name
+    }
+
+    if (isWork) {
+      const preferred = available.find((r) =>
+        ['María', 'Estela', 'Noa', 'Nerea'].includes(r.name)
+      )
+      if (preferred) suggested = preferred.name
+    }
+
+    if (isEnergy) {
+      const preferred = available.find((r) =>
+        ['Luna', 'Alma', 'Mara', 'Noa'].includes(r.name)
+      )
+      if (preferred) suggested = preferred.name
     }
 
     const reader = available.find((r) => r.name === suggested) || available[0]
+    setMemory((prev) => ({ ...prev, topic }))
 
-// 🔥 SIEMPRE CONTROL HUMANO
-let reply = `mm... por lo que me estás diciendo...
+    let baseReply = ''
 
-siento que esto es bastante importante para ti.
-
-mira, ahora mismo tengo libre a ${reader.name}, que ${reader.description}.
-
-no sé por qué, pero me da que puede ayudarte bastante con esto.
-
-si quieres, te paso con ella`
-    if (reader?.name) {
-      setPendingTransfer(reader.name)
+    if (isLove) {
+      baseReply = `Para lo que me estás diciendo de amor, la que más te encaja ahora mismo es ${reader.name}. ${reader.description} Lo noto bastante claro en tu caso. Si quieres, te paso con ella.`
+    } else if (isWork) {
+      baseReply = `Para temas de trabajo y estabilidad, la que más te encaja ahora mismo es ${reader.name}. ${reader.description} Si quieres, te paso con ella.`
+    } else if (isEnergy) {
+      baseReply = `Para lo que me estás contando de energía y bloqueo, la que mejor te puede mirar esto ahora mismo es ${reader.name}. ${reader.description} Si quieres, te paso con ella.`
+    } else if (asksBest) {
+      baseReply = `De las que tengo libres ahora mismo, la que más te recomendaría es ${reader.name}. ${reader.description} Si quieres, te paso con ella.`
+    } else {
+      baseReply = `Mm... por lo que me estás diciendo, siento que la que mejor te puede ayudar ahora mismo es ${reader.name}. ${reader.description} Si quieres, te paso con ella.`
     }
 
+    const ai = await askAI('central', text, available)
+    let reply = baseReply
+
+    if (ai && ai.length > 40) {
+      reply = `${ai}\n\nDe todas formas, sinceramente, para lo tuyo te recomiendo a ${reader.name}. Si quieres, te paso con ella.`
+    }
+
+    setPendingTransfer(reader.name)
     await showTypingAndAnswer('central', CENTRAL_NAME, reply, 1700)
   }
 
@@ -649,7 +700,6 @@ si quieres, te paso con ella`
       })
     })
     const json = await res.json()
-
     if (!res.ok) {
       alert(json.error || 'No se pudo crear la reserva')
       return
@@ -831,16 +881,8 @@ si quieres, te paso con ella`
             </div>
 
             <div style={{ padding: 18, borderTop: '1px solid #f1e7cd', display: 'flex', gap: 12, flexShrink: 0 }}>
-              <input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                placeholder={mode === 'reader' ? 'Escribe tu consulta...' : 'Escribe aquí tu mensaje...'}
-                style={{ flex: 1, padding: '14px 16px', borderRadius: 16, border: '1px solid #dccca4', outline: 'none' }}
-              />
-              <button onClick={handleSend} style={{ padding: '14px 18px', borderRadius: 16, border: 'none', background: '#6f3ea8', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
-                Enviar
-              </button>
+              <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSend()} placeholder={mode === 'reader' ? 'Escribe tu consulta...' : 'Escribe aquí tu mensaje...'} style={{ flex: 1, padding: '14px 16px', borderRadius: 16, border: '1px solid #dccca4', outline: 'none' }} />
+              <button onClick={handleSend} style={{ padding: '14px 18px', borderRadius: 16, border: 'none', background: '#6f3ea8', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>Enviar</button>
             </div>
           </section>
 
@@ -856,15 +898,12 @@ si quieres, te paso con ella`
               Comprar créditos
             </a>
 
-            <button
-              onClick={async () => {
-                if (activeReader) await releaseReader()
-                setActiveReader(null)
-                setMode('central')
-                await addAndPersist('central', `Hola ${profile.display_name}, ya estoy otra vez contigo. Dime qué necesitas y te ayudo encantada.`, CENTRAL_NAME)
-              }}
-              style={{ width: '100%', padding: '14px 16px', borderRadius: 14, border: '1px solid #dccca4', background: '#fff', color: '#6f3ea8', fontWeight: 800, cursor: 'pointer', marginBottom: 10 }}
-            >
+            <button onClick={async () => {
+              if (activeReader) await releaseReader()
+              setActiveReader(null)
+              setMode('central')
+              await addAndPersist('central', `Hola ${profile.display_name}, ya estoy otra vez contigo. Dime qué necesitas y te ayudo encantada.`, CENTRAL_NAME)
+            }} style={{ width: '100%', padding: '14px 16px', borderRadius: 14, border: '1px solid #dccca4', background: '#fff', color: '#6f3ea8', fontWeight: 800, cursor: 'pointer', marginBottom: 10 }}>
               Volver con el central
             </button>
 
