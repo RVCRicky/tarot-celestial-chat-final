@@ -585,8 +585,6 @@ export default function ChatPage() {
       }
 
       setActiveReader(readerName)
-      setMode('reader')
-      setPendingTransfer(null)
       setMemory((prev) => ({
         ...prev,
         readerStage: 'intro',
