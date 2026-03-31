@@ -334,13 +334,97 @@ const addAndPersist = async (sender, text, senderName) => {
   }
 
   const answerCentral = async (text) => {
-    const lower = normalizeText(text)
+  const lower = normalizeText(text)
 
-    if (pendingTransfer) {
-      if (['si', 'sí', 'vale', 'ok', 'perfecto', 'claro', 'de acuerdo'].includes(lower)) {
-        await beginTransfer(pendingTransfer)
-        return
-      }
+  // 🔥 detectar pregunta directa
+  if (lower.includes('quien tienes') || lower.includes('quién tienes')) {
+    const available = readers.filter((r) => r.status === 'Libre')
+
+    if (!available.length) {
+      await showTypingAndAnswer(
+        'central',
+        CENTRAL_NAME,
+        'Ahora mismo están todas ocupadas cielo... si quieres te aviso en cuanto se libere una.',
+        1400
+      )
+      return
+    }
+
+    const names = available.map(r => r.name).join(', ')
+
+    await showTypingAndAnswer(
+      'central',
+      CENTRAL_NAME,
+      `ahora mismo tengo a ${names} disponibles...
+
+si me dices qué quieres mirar exactamente, te recomiendo la mejor para ti`,
+      1400
+    )
+
+    return
+  }
+
+  if (pendingTransfer) {
+    if (['si', 'sí', 'vale', 'ok', 'perfecto', 'claro', 'de acuerdo'].includes(lower)) {
+      await beginTransfer(pendingTransfer)
+      return
+    }
+    if (['no', 'mejor no', 'espera'].includes(lower)) {
+      setPendingTransfer(null)
+      await showTypingAndAnswer(
+        'central',
+        CENTRAL_NAME,
+        'Claro cielo, no pasa nada. Dime qué prefieres y lo vemos juntas.',
+        1200
+      )
+      return
+    }
+  }
+
+  const topic = topicFromText(text)
+  const available = readers.filter((r) => r.status === 'Libre')
+
+  if (!available.length) {
+    await showTypingAndAnswer(
+      'central',
+      CENTRAL_NAME,
+      'Ahora mismo están todas en consulta cielo... pero en breve se libera alguna. Si quieres te aviso.',
+      1400
+    )
+    return
+  }
+
+  let suggested = recommendedReader(topic, available)
+
+  if (!suggested) {
+    suggested = available[Math.floor(Math.random() * available.length)].name
+  }
+
+  const reader = available.find((r) => r.name === suggested) || available[0]
+
+  setMemory((prev) => ({ ...prev, topic }))
+
+  let reply = await askAI('central', text, available)
+
+  if (!reply || reply.length < 20) {
+    reply = `mm... por lo que me estás diciendo...
+
+siento que esto es importante para ti.
+
+mira, ahora mismo tengo libre a ${reader.name}, que ${reader.description}.
+
+no sé por qué, pero me da que puede ayudarte bastante con esto.
+
+si quieres, te paso con ella`
+  }
+
+  // 🔥 AQUÍ EL FIX CLAVE
+  if (reader?.name) {
+    setPendingTransfer(reader.name)
+  }
+
+  await showTypingAndAnswer('central', CENTRAL_NAME, reply, 1700)
+}
       if (['no', 'mejor no', 'espera'].includes(lower)) {
         setPendingTransfer(null)
         await showTypingAndAnswer('central', CENTRAL_NAME, 'Claro cielo, no pasa nada. Dime qué prefieres y lo vemos juntas.', 1200)
