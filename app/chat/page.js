@@ -11,6 +11,19 @@ import {
   extractZodiac,
   isMainQuestion,
   isFollowup,
+  estimateTypingMs,'use client'
+
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { supabase } from '../../lib/supabaseClient'
+import {
+  READERS,
+  topicFromText,
+  recommendedReader,
+  pricesForCountry,
+  extractName,
+  extractZodiac,
+  isMainQuestion,
+  isFollowup,
   estimateTypingMs,
   normalizeText
 } from '../../lib/chatShared'
@@ -38,7 +51,7 @@ function includesAny(text, list) {
   return list.some((item) => text.includes(item))
 }
 
-function buildControlledCentralReply({ text, available, chosenReader, profileName }) {
+function buildControlledCentralReply({ text, chosenReader }) {
   const lower = normalizeText(text)
 
   const isLove = includesAny(lower, [
@@ -294,6 +307,7 @@ export default function ChatPage() {
       )
 
       if (exists) return prev
+
       return [...prev, message]
     })
   }
@@ -584,7 +598,11 @@ export default function ChatPage() {
         return
       }
 
+      setMessages([])
+      setKnownMessageIds({})
       setActiveReader(readerName)
+      setMode('reader')
+      setPendingTransfer(null)
       setMemory((prev) => ({
         ...prev,
         readerStage: 'intro',
@@ -607,29 +625,28 @@ export default function ChatPage() {
     await fetchReaders()
   }
 
-  // 🔥 DETECTAR PETICIÓN DIRECTA DE TAROTISTA
-const lower = normalizeText(text)
-
-const directReader = readers.find(r =>
-  lower.includes(r.name.toLowerCase())
-)
-
-if (directReader && directReader.status === 'Libre') {
-  setPendingTransfer(directReader.name)
-
-  await showTypingAndAnswer(
-    'central',
-    CENTRAL_NAME,
-    `vale cielo... te paso con ${directReader.name} ahora mismo, un momento...`,
-    1200
-  )
-
-  await beginTransfer(directReader.name)
-  return
-}
-
   const answerCentral = async (text) => {
     const lower = normalizeText(text)
+
+    const directReader = readers.find((r) =>
+      lower.includes(r.name.toLowerCase())
+    )
+
+    if (directReader && directReader.status === 'Libre') {
+      setPendingTransfer(directReader.name)
+      await beginTransfer(directReader.name)
+      return
+    }
+
+    if (directReader && directReader.status !== 'Libre') {
+      await showTypingAndAnswer(
+        'central',
+        CENTRAL_NAME,
+        `Cielo... justo ahora ${directReader.name} está ocupada, pero si quieres te aviso en cuanto se libere o te paso con alguien muy parecida.`,
+        1400
+      )
+      return
+    }
 
     if (lower.includes('quien tienes') || lower.includes('quién tienes')) {
       const available = readers.filter((r) => r.status === 'Libre')
@@ -708,9 +725,7 @@ if (directReader && directReader.status === 'Libre') {
     const chosenReader = chooseReaderForTopic(topic, available, text)
     const baseReply = buildControlledCentralReply({
       text,
-      available,
-      chosenReader,
-      profileName: profile?.display_name || ''
+      chosenReader
     })
 
     let reply = baseReply
@@ -1059,16 +1074,8 @@ if (directReader && directReader.status === 'Libre') {
             </div>
 
             <div style={{ padding: 18, borderTop: '1px solid #f1e7cd', display: 'flex', gap: 12, flexShrink: 0 }}>
-              <input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                placeholder={mode === 'reader' ? 'Escribe tu consulta...' : 'Escribe aquí tu mensaje...'}
-                style={{ flex: 1, padding: '14px 16px', borderRadius: 16, border: '1px solid #dccca4', outline: 'none' }}
-              />
-              <button onClick={handleSend} style={{ padding: '14px 18px', borderRadius: 16, border: 'none', background: '#6f3ea8', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
-                Enviar
-              </button>
+              <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSend()} placeholder={mode === 'reader' ? 'Escribe tu consulta...' : 'Escribe aquí tu mensaje...'} style={{ flex: 1, padding: '14px 16px', borderRadius: 16, border: '1px solid #dccca4', outline: 'none' }} />
+              <button onClick={handleSend} style={{ padding: '14px 18px', borderRadius: 16, border: 'none', background: '#6f3ea8', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>Enviar</button>
             </div>
           </section>
 
@@ -1084,15 +1091,12 @@ if (directReader && directReader.status === 'Libre') {
               Comprar créditos
             </a>
 
-            <button
-              onClick={async () => {
-                if (activeReader) await releaseReader()
-                setActiveReader(null)
-                setMode('central')
-                await addAndPersist('central', `Hola ${profile.display_name}, ya estoy otra vez contigo. Dime qué necesitas y te ayudo encantada.`, CENTRAL_NAME)
-              }}
-              style={{ width: '100%', padding: '14px 16px', borderRadius: 14, border: '1px solid #dccca4', background: '#fff', color: '#6f3ea8', fontWeight: 800, cursor: 'pointer', marginBottom: 10 }}
-            >
+            <button onClick={async () => {
+              if (activeReader) await releaseReader()
+              setActiveReader(null)
+              setMode('central')
+              await addAndPersist('central', `Hola ${profile.display_name}, ya estoy otra vez contigo. Dime qué necesitas y te ayudo encantada.`, CENTRAL_NAME)
+            }} style={{ width: '100%', padding: '14px 16px', borderRadius: 14, border: '1px solid #dccca4', background: '#fff', color: '#6f3ea8', fontWeight: 800, cursor: 'pointer', marginBottom: 10 }}>
               Volver con el central
             </button>
 
