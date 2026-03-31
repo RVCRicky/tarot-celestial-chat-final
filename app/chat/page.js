@@ -832,16 +832,6 @@ export default function ChatPage() {
         return
       }
 
-      await releaseReader()
-      setMode('central')
-      setActiveReader(null)
-      await showTypingAndAnswer(
-        'central',
-        CENTRAL_NAME,
-        `Hola ${profile.display_name}, ¿cómo te fue con ${memory.lastReader || 'tu tarotista'}? Si quieres seguir con la consulta, te explico los créditos y te la vuelvo a pasar.`,
-        1300
-      )
-      return
     }
 
     if (stage === 'followup-used') {
