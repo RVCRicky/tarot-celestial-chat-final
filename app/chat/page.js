@@ -62,8 +62,6 @@ export default function ChatPage() {
   }
 
   const addLocalMessage = (message) => {
-    setMessages((prev) => [...prev, message])
-  }
 
   const persistMessage = async (sender, text, senderName = null) => {
     if (!session?.id) return null
