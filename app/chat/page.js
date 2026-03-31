@@ -544,9 +544,14 @@ export default function ChatPage() {
     const ai = await askAI('central', text, available)
     let reply = baseReply
 
-    if (ai && ai.length > 40) {
-      reply = `${ai}\n\nDe todas formas, sinceramente, para lo tuyo te recomiendo a ${reader.name}. Si quieres, te paso con ella.`
-    }
+// SOLO usar IA si NO es un caso claro
+if (!isLove && !isWork && !isEnergy && !asksBest) {
+  const ai = await askAI('central', text, available)
+
+  if (ai && ai.length > 40) {
+    reply = `${ai}\n\nDe todas formas, sinceramente, para lo tuyo te recomiendo a ${reader.name}. Si quieres, te paso con ella.`
+  }
+}
 
     setPendingTransfer(reader.name)
     await showTypingAndAnswer('central', CENTRAL_NAME, reply, 1700)
