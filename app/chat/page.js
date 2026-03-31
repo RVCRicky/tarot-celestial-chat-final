@@ -80,12 +80,23 @@ export default function ChatPage() {
   const addAndPersist = async (sender, text, senderName = null) => {
     const temp = { id: `temp-${Math.random()}`, sender, sender_name: senderName, text }
     addLocalMessage(temp)
-    const saved = await persistMessage(sender, text, senderName)
     if (saved) {
       setKnownMessageIds((prev) => ({ ...prev, [saved.id]: true }))
     }
   }
 
+  const persistMessage = async (message) => {
+  try {
+    await fetch('/api/session/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(message)
+    })
+  } catch (e) {
+    console.error('Error guardando mensaje', e)
+  }
+}
+  
   const showTypingAndAnswer = async (sender, senderName, text, minDelay = 1500) => {
     const label = sender === 'reader'
       ? `${senderName || activeReader || 'Tarotista'} está escribiendo...`
