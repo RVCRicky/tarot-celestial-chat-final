@@ -375,15 +375,73 @@ const addAndPersist = async (sender, text, senderName) => {
     }
 
     const topic = topicFromText(text)
-    const available = readers.filter((r) => r.status === 'Libre')
-    const suggested = recommendedReader(topic, available)
-    setMemory((prev) => ({ ...prev, topic }))
+const available = readers.filter((r) => r.status === 'Libre')
 
-    let reply = await askAI('central', text, available)
-    if (!reply) {
-      const reader = available.find((r) => r.name === suggested) || available[0]
-      reply = `Por lo que me estás contando, cielo, siento que te iría muy bien hablar con ${reader?.name || 'Aurora'}, porque ${reader?.description || 'conecta muy bien con este tema'}. Si quieres, te paso con ${reader?.name || 'ella'} ahora mismo.`
-    }
+// 🔥 DETECCIÓN INTELIGENTE
+let suggested = recommendedReader(topic, available)
+
+// fallback humano
+if (!suggested && available.length > 0) {
+  suggested = available[Math.floor(Math.random() * available.length)].name
+}
+
+setMemory((prev) => ({ ...prev, topic }))
+
+    // SOLO TE MARCO CAMBIO CLAVE ARRIBA, EL RESTO ES TUYO IGUAL
+
+const answerCentral = async (text) => {
+  const lower = normalizeText(text)
+
+  // 🔥 NUEVO: detectar pregunta directa (esto te faltaba)
+  if (lower.includes('quien tienes') || lower.includes('quién tienes')) {
+    const available = readers.filter((r) => r.status === 'Libre')
+
+    const names = available.map(r => r.name).join(', ')
+
+    await showTypingAndAnswer(
+      'central',
+      CENTRAL_NAME,
+      `ahora mismo tengo a ${names} disponibles...
+
+cada una tiene su forma de trabajar, pero si me dices qué quieres mirar exactamente, te recomiendo la mejor para ti`,
+      1400
+    )
+
+    return
+  }
+
+  // 🔥 TODO ESTO ES TUYO, PERO ORDENADO Y AJUSTADO
+  const topic = topicFromText(text)
+  const available = readers.filter((r) => r.status === 'Libre')
+
+  let suggested = recommendedReader(topic, available)
+
+  if (!suggested && available.length > 0) {
+    suggested = available[Math.floor(Math.random() * available.length)].name
+  }
+
+  setMemory((prev) => ({ ...prev, topic }))
+
+  let reply = await askAI('central', text, available)
+
+  // 🔥 fallback humano (CLAVE)
+  if (!reply || reply.length < 20) {
+    const reader = available.find((r) => r.name === suggested) || available[0]
+
+    reply = `mm... por lo que me estás diciendo...
+
+siento que esto es bastante importante para ti.
+
+mira, ahora mismo tengo libre a ${reader?.name}, que ${reader?.description}.
+
+no sé por qué, pero me da que puede ayudarte bastante con esto.
+
+si quieres, te paso con ella`
+  }
+
+  setPendingTransfer(suggested)
+  await showTypingAndAnswer('central', CENTRAL_NAME, reply, 1700)
+}
 
     setPendingTransfer(suggested)
     await showTypingAndAnswer('central', CENTRAL_NAME, reply, 1700)
