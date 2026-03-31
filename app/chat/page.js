@@ -62,17 +62,20 @@ export default function ChatPage() {
   }
 
   const addLocalMessage = (message) => {
+  setMessages((prev) => {
+    const exists = prev.some(
+      (m) =>
+        m.id === message.id ||
+        (m.text === message.text &&
+          m.sender === message.sender &&
+          m.sender_name === message.sender_name)
+    )
 
-  const persistMessage = async (sender, text, senderName = null) => {
-    if (!session?.id) return null
-    const res = await fetch('/api/session/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId: session.id, sender, text, senderName })
-    })
-    const json = await res.json()
-    return json.message || null
-  }
+    if (exists) return prev
+
+    return [...prev, message]
+  })
+}
 
   const addAndPersist = async (sender, text, senderName = null) => {
     const temp = { id: `temp-${Math.random()}`, sender, sender_name: senderName, text }
