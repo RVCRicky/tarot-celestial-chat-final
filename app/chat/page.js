@@ -11,19 +11,6 @@ import {
   extractZodiac,
   isMainQuestion,
   isFollowup,
-  estimateTypingMs,'use client'
-
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { supabase } from '../../lib/supabaseClient'
-import {
-  READERS,
-  topicFromText,
-  recommendedReader,
-  pricesForCountry,
-  extractName,
-  extractZodiac,
-  isMainQuestion,
-  isFollowup,
   estimateTypingMs,
   normalizeText
 } from '../../lib/chatShared'
