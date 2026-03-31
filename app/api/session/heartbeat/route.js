@@ -8,7 +8,8 @@ export async function POST(req) {
     .update({
       heartbeat_at: new Date().toISOString(),
       mode: body.mode || 'central',
-      current_reader_name: body.currentReaderName || null
+      current_reader_name: body.currentReaderName || null,
+      status: 'active'
     })
     .eq('id', body.sessionId)
 

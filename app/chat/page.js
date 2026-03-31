@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import {
   READERS,
@@ -274,9 +274,15 @@ export default function ChatPage() {
   const shouldStickRef = useRef(true)
   const timersRef = useRef([])
   const sessionRef = useRef(null)
+  const activeReaderRef = useRef(null)
 
   const onlineReaders = useMemo(() => readers.filter((r) => r.status !== 'Offline'), [readers])
   const offlineReaders = useMemo(() => readers.filter((r) => r.status === 'Offline'), [readers])
+
+
+  useEffect(() => {
+    activeReaderRef.current = activeReader
+  }, [activeReader])
 
   const queue = (fn, delay) => {
     const id = setTimeout(fn, delay)
@@ -446,6 +452,14 @@ export default function ChatPage() {
       setSession(sessionJson.session)
       sessionRef.current = sessionJson.session
 
+      if (sessionJson.session?.mode === 'reader' && sessionJson.session?.current_reader_name) {
+        setMode('reader')
+        setActiveReader(sessionJson.session.current_reader_name)
+      } else {
+        setMode('central')
+        setActiveReader(null)
+      }
+
       await fetchReaders()
       const existingMessages = await fetchMessages(sessionJson.session.id)
 
@@ -485,6 +499,45 @@ export default function ChatPage() {
     }
   }, [session?.id, mode, activeReader])
 
+
+  useEffect(() => {
+    if (!session?.id) return
+
+    const closeCurrentSession = async () => {
+      const readerName = activeReaderRef.current
+
+      try {
+        await fetch('/api/session/close', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId: session.id,
+            readerName: readerName || null
+          }),
+          keepalive: true
+        })
+      } catch {
+        // silencio intencional para no romper cierre de página
+      }
+    }
+
+    const handlePageHide = () => {
+      closeCurrentSession()
+    }
+
+    const handleBeforeUnload = () => {
+      closeCurrentSession()
+    }
+
+    window.addEventListener('pagehide', handlePageHide)
+    window.addEventListener('beforeunload', handleBeforeUnload)
+
+    return () => {
+      window.removeEventListener('pagehide', handlePageHide)
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+    }
+  }, [session?.id])
+
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
@@ -511,7 +564,9 @@ export default function ChatPage() {
           country: profile?.country || '',
           conversation: messages.slice(-12).map((m) => ({
             sender: m.sender || m.sender_name || 'system',
-            text: m.text
+            text: m.text,
+            role: m.sender === 'client' ? 'user' : 'assistant',
+            content: m.text
           })),
           latestUserMessage,
           availableReaders: availableReadersList,
@@ -600,16 +655,63 @@ export default function ChatPage() {
     }, 3000 + randomDelay)
   }
 
-  const releaseReader = async () => {
-    if (!activeReader) return
+  const releaseReader = useCallback(async (readerName = null) => {
+    const nameToRelease = readerName || activeReaderRef.current || activeReader
+    if (!nameToRelease) return
 
     await fetch('/api/readers/release', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ readerName: activeReader })
+      body: JSON.stringify({ readerName: nameToRelease })
     })
 
+    if (activeReaderRef.current === nameToRelease) {
+      activeReaderRef.current = null
+    }
+
     await fetchReaders()
+  }, [activeReader])
+
+  const shouldExplainRecommendation = (text) => {
+    const lower = normalizeText(text)
+    return includesAny(lower, [
+      'como sabes',
+      'cómo sabes',
+      'por que ella',
+      'por qué ella',
+      'por que me recomiendas',
+      'por qué me recomiendas',
+      'porque ella',
+      'porque dices',
+      'en que te basas',
+      'en qué te basas'
+    ])
+  }
+
+  const buildRecommendationReason = (text, chosenReader) => {
+    if (!chosenReader) {
+      return 'No te lo digo al azar, cielo. Simplemente con lo que me vas contando voy viendo qué tarotista te puede encajar mejor.'
+    }
+
+    const lower = normalizeText(text)
+
+    if (includesAny(lower, ['amor', 'pareja', 'ex', 'volver', 'reconcili', 'celos', 'infidel'])) {
+      return `Porque por cómo me lo estás planteando noto un tema muy emocional y de vínculo, y ${chosenReader.name} suele entrar muy bien justo en ese tipo de historias. No te lo digo por decirte un nombre.`
+    }
+
+    if (includesAny(lower, ['trabajo', 'dinero', 'econom', 'laboral', 'negocio', 'empleo'])) {
+      return `Porque cuando me hablan de trabajo, bloqueos o estabilidad, ${chosenReader.name} suele ser de las que ve esto con más claridad. Por eso te la he dicho a ella.`
+    }
+
+    if (includesAny(lower, ['energia', 'energía', 'bloqueo', 'espiritual', 'camino', 'ansiedad', 'agobio'])) {
+      return `Porque lo que me estás transmitiendo tiene más carga energética que otra cosa, y ${chosenReader.name} conecta muy bien con ese tipo de consulta. Por eso te la he recomendado.`
+    }
+
+    if (includesAny(lower, ['familia', 'madre', 'padre', 'hijo', 'hija', 'hermano', 'hermana'])) {
+      return `Porque por la forma en la que me lo cuentas veo un tema delicado y bastante personal, y ${chosenReader.name} suele llevar muy bien consultas de ese tipo. Por eso te la he dicho.`
+    }
+
+    return `Porque por el tono de lo que me estás contando siento que ${chosenReader.name} te puede entender mejor y entrar más fino en tu caso. No es algo al azar, cielo.`
   }
 
   const answerCentral = async (text) => {
@@ -670,6 +772,17 @@ export default function ChatPage() {
         CENTRAL_NAME,
         'Claro cielo, no pasa nada. Dime qué prefieres y lo vemos juntas.',
         1200
+      )
+      return
+    }
+
+    if (pendingTransfer && shouldExplainRecommendation(text)) {
+      const pendingReader = readers.find((r) => r.name === pendingTransfer) || null
+      await showTypingAndAnswer(
+        'central',
+        CENTRAL_NAME,
+        `${buildRecommendationReason(text, pendingReader)} Si quieres, te paso con ${pendingTransfer}.`,
+        1500
       )
       return
     }
@@ -773,9 +886,11 @@ export default function ChatPage() {
 
       const allowed = await chargeMainQuestion()
       if (!allowed) {
-        await releaseReader()
+        await releaseReader(activeReader)
+        setPendingTransfer(null)
         setMode('central')
         setActiveReader(null)
+        await heartbeat('central', null)
         await showTypingAndAnswer(
           'central',
           CENTRAL_NAME,
@@ -897,8 +1012,19 @@ export default function ChatPage() {
   }
 
   const handleLogout = async () => {
-    if (activeReader) {
-      await releaseReader()
+    const readerToRelease = activeReaderRef.current
+    if (readerToRelease) {
+      await releaseReader(readerToRelease)
+    }
+    if (sessionRef.current?.id) {
+      await fetch('/api/session/close', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: sessionRef.current.id,
+          readerName: readerToRelease || null
+        })
+      })
     }
     await supabase.auth.signOut()
     window.location.href = '/auth/login'
@@ -1060,9 +1186,12 @@ export default function ChatPage() {
             </a>
 
             <button onClick={async () => {
-              if (activeReader) await releaseReader()
+              const readerToRelease = activeReaderRef.current
+              if (readerToRelease) await releaseReader(readerToRelease)
+              setPendingTransfer(null)
               setActiveReader(null)
               setMode('central')
+              await heartbeat('central', null)
               await addAndPersist('central', `Hola ${profile.display_name}, ya estoy otra vez contigo. Dime qué necesitas y te ayudo encantada.`, CENTRAL_NAME)
             }} style={{ width: '100%', padding: '14px 16px', borderRadius: 14, border: '1px solid #dccca4', background: '#fff', color: '#6f3ea8', fontWeight: 800, cursor: 'pointer', marginBottom: 10 }}>
               Volver con el central
