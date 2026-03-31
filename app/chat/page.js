@@ -77,13 +77,6 @@ export default function ChatPage() {
   })
 }
 
-  const addAndPersist = async (sender, text, senderName = null) => {
-    const temp = { id: `temp-${Math.random()}`, sender, sender_name: senderName, text }
-    addLocalMessage(temp)
-    if (saved) {
-      setKnownMessageIds((prev) => ({ ...prev, [saved.id]: true }))
-    }
-  }
 
   const persistMessage = async (message) => {
   try {
