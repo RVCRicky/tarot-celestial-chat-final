@@ -607,6 +607,27 @@ export default function ChatPage() {
     await fetchReaders()
   }
 
+  // 🔥 DETECTAR PETICIÓN DIRECTA DE TAROTISTA
+const lower = normalizeText(text)
+
+const directReader = readers.find(r =>
+  lower.includes(r.name.toLowerCase())
+)
+
+if (directReader && directReader.status === 'Libre') {
+  setPendingTransfer(directReader.name)
+
+  await showTypingAndAnswer(
+    'central',
+    CENTRAL_NAME,
+    `vale cielo... te paso con ${directReader.name} ahora mismo, un momento...`,
+    1200
+  )
+
+  await beginTransfer(directReader.name)
+  return
+}
+
   const answerCentral = async (text) => {
     const lower = normalizeText(text)
 
