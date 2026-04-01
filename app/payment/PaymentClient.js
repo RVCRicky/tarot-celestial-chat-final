@@ -2,24 +2,15 @@
 'use client'
 
 import { useSearchParams } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 
 export default function PaymentClient() {
-  const searchParams = useSearchParams()
-  const [pack, setPack] = useState(null)
+  const params = useSearchParams()
 
   useEffect(() => {
-    const selectedPack = searchParams.get('pack')
-    if (selectedPack) {
-      setPack(selectedPack)
-      localStorage.setItem('selectedPack', selectedPack)
-    }
-  }, [searchParams])
+    const pack = params.get('pack')
+    if (pack) localStorage.setItem('selectedPack', pack)
+  }, [params])
 
-  return (
-    <div style={{padding:20}}>
-      <h1>Pago</h1>
-      {pack && <p>Has seleccionado: {pack}</p>}
-    </div>
-  )
+  return <div style={{padding:20}}>Procesando pago...</div>
 }

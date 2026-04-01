@@ -1,3 +1,1 @@
-import { redirect } from 'next/navigation'
-
-export default function Page(){ redirect('/chat?paid=1'); return null }
+import { redirect } from 'next/navigation'; export default function Page(){ redirect('/chat?paid=1'); }

@@ -33,6 +33,11 @@ async function cleanupStaleSessions(supabase) {
 }
 
 export async function GET() {
+  await supabase
+    .from('sessions')
+    .update({ status: 'closed' })
+    .lt('last_activity', new Date(Date.now() - 30000).toISOString())
+    .eq('status', 'active')
   const supabase = getServiceSupabase()
   const shift = currentShift()
 

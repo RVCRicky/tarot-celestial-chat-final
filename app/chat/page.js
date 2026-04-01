@@ -17,6 +17,8 @@ import {
 
 const CENTRAL_NAME = 'Clara'
 
+const getPaidFlag = () => typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('paid') === '1'
+
 const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null
 const cameFromPayment = urlParams?.get('paid') === '1'
 
