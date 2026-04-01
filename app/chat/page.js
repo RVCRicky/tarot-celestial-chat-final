@@ -714,17 +714,78 @@ export default function ChatPage() {
   }
 
   const beginTransfer = async (readerName, options = {}) => {
-    const { skipCentralMessage = false } = options
+  const { skipCentralMessage = false } = options
 
-    if (!skipCentralMessage) {
-      await addAndPersist('central', `Vale cielo, te transfiero con ${readerName}. Un momento...`, CENTRAL_NAME)
+  if (!skipCentralMessage) {
+    await addAndPersist(
+      'central',
+      `Vale cielo, te transfiero con ${readerName}. Un momento...`,
+      CENTRAL_NAME
+    )
+  }
+
+  queue(() => {
+    setMode('connecting')
+    setTyping('')
+    setActiveReader(readerName)
+  }, 1200)
+
+  const randomDelay = 2600 + Math.floor(Math.random() * 2600)
+
+  queue(async () => {
+    const currentSessionId = sessionRef.current?.id || session?.id
+
+    const res = await fetch('/api/readers/claim', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        readerName,
+        profileId: profile.id,
+        sessionId: currentSessionId
+      })
+    })
+
+    const json = await res.json()
+
+    if (!res.ok) {
+      setMode('central')
+      setActiveReader(null)
+
+      await addAndPersist(
+        'central',
+        `Cielo, justo ahora ${readerName} ha pasado a estar ocupada. Si quieres te recomiendo a otra de las que tengo libres en este momento.`,
+        CENTRAL_NAME
+      )
+
+      await fetchReaders()
+      return
     }
 
-    queue(() => {
-      setMode('connecting')
+    // 🔥 CLAVE: sincronizar con backend (única fuente de verdad)
+    await fetchReaders()
+
+    resetVisibleConversation()
+    setActiveReader(readerName)
+    setMode('reader')
+    setPendingTransfer(null)
+    setPriceQuoteOpen(false)
+
+    setMemory((prev) => ({
+      ...prev,
+      readerStage: 'intro',
+      lastReader: readerName,
+      targetName: prev.targetName || '',
+      targetSign: prev.targetSign || ''
+    }))
+
+    setTyping(`${readerName} está escribiendo...`)
+
+    queue(async () => {
       setTyping('')
-      setActiveReader(readerName)
-    }, 1200)
+      await addAndPersist('reader', readerGreeting(readerName), readerName)
+    }, 1800)
+  }, 1200 + randomDelay)
+}
 
     const randomDelay = 2600 + Math.floor(Math.random() * 2600)
 
