@@ -8,6 +8,15 @@ export async function POST(req) {
 
   await cleanupReaderSessionState(supabase)
 
+  // 🔥 LIMPIEZA FORZADA DEL READER (CLAVE)
+  await supabase
+    .from('reader_statuses')
+    .update({
+      occupied_by_profile_id: null,
+      active_session_id: null
+    })
+    .eq('reader_name', readerName)
+
   const { data: current } = await supabase
     .from('reader_statuses')
     .select('*')
@@ -18,7 +27,12 @@ export async function POST(req) {
     return Response.json({ error: 'Tarotista no encontrada' }, { status: 404 })
   }
 
-  if (current.status === 'Ocupada' && current.active_session_id && current.active_session_id !== sessionId && current.occupied_by_profile_id !== profileId) {
+  if (
+    current.status === 'Ocupada' &&
+    current.active_session_id &&
+    current.active_session_id !== sessionId &&
+    current.occupied_by_profile_id !== profileId
+  ) {
     return Response.json({ error: 'Tarotista ocupada' }, { status: 409 })
   }
 
@@ -45,5 +59,6 @@ export async function POST(req) {
     .eq('reader_name', readerName)
 
   if (error) return Response.json({ error: error.message }, { status: 500 })
+
   return Response.json({ ok: true })
 }
