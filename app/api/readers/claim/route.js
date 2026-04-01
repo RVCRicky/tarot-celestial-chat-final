@@ -6,15 +6,7 @@ export async function POST(req) {
   const body = await req.json()
   const { readerName, profileId, sessionId } = body
 
-
-  // 🔥 LIMPIEZA FORZADA DEL READER
-  await supabase
-    .from('reader_statuses')
-    .update({
-      occupied_by_profile_id: null,
-      active_session_id: null
-    })
-    .eq('reader_name', readerName)
+  // ❌ ELIMINADO: limpieza que rompía el estado
 
   const { data: current } = await supabase
     .from('reader_statuses')
@@ -37,7 +29,7 @@ export async function POST(req) {
 
   const now = new Date().toISOString()
 
-  // 🔥 FIX REAL → ASEGURAR SESIÓN ACTIVA (CLAVE)
+  // 🔥 ASEGURAR SESIÓN ACTIVA
   await supabase
     .from('chat_sessions')
     .upsert({
@@ -48,7 +40,7 @@ export async function POST(req) {
       status: 'active'
     })
 
-  // 🔥 MARCAR READER COMO OCUPADA
+  // 🔥 MARCAR READER COMO OCUPADA (SIN ESTADO INTERMEDIO)
   const { error } = await supabase
     .from('reader_statuses')
     .update({
