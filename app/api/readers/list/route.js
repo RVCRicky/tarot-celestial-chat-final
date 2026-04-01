@@ -1,36 +1,64 @@
-import { getServiceSupabase } from '../../../../lib/serverSupabase'
-import { cleanupReaderSessionState } from '../../../../lib/sessionCleanup'
-import { READERS, currentShift } from '../../../../lib/chatShared'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+)
 
 export async function GET() {
-  const supabase = getServiceSupabase()
-  const shift = currentShift()
+  try {
+    const now = new Date()
 
-  await cleanupReaderSessionState(supabase)
+    // 🔥 1. limpiar sesiones muertas
+    await supabase
+      .from('sessions')
+      .update({ status: 'closed' })
+      .lt(
+        'last_activity',
+        new Date(Date.now() - 30000).toISOString()
+      )
+      .eq('status', 'active')
 
-  const { data: statusRows } = await supabase
-    .from('reader_statuses')
-    .select('*')
+    // 🔥 2. traer readers
+    const { data: readers, error: rError } = await supabase
+      .from('readers')
+      .select('*')
 
-  const rows = statusRows || []
+    if (rError) throw rError
 
-  const merged = READERS.map((reader) => {
-    const dbRow = rows.find((r) => r.reader_name === reader.name)
-    const shiftOnline = reader.shift === shift
+    // 🔥 3. traer sesiones activas
+    const { data: sessions, error: sError } = await supabase
+      .from('sessions')
+      .select('*')
+      .eq('status', 'active')
 
-    let status = shiftOnline ? 'Libre' : 'Offline'
+    if (sError) throw sError
 
-    if (dbRow?.admin_force_status === 'offline') status = 'Offline'
-    if (dbRow?.admin_force_status === 'online') status = 'Libre'
-    if (dbRow?.status === 'Ocupada' && dbRow?.active_session_id) status = 'Ocupada'
+    // 🔥 4. calcular estado REAL
+    const result = readers.map((reader) => {
+      const activeSession = sessions.find(
+        (s) => s.reader_name === reader.name
+      )
 
-    return {
-      ...reader,
-      status,
-      occupied_by: dbRow?.occupied_by_profile_id || null,
-      active_session_id: dbRow?.active_session_id || null
-    }
-  })
+      if (!activeSession) {
+        return { ...reader, status: 'Libre' }
+      }
 
-  return Response.json({ readers: merged })
+      const diff =
+        (now - new Date(activeSession.last_activity)) / 1000
+
+      if (diff > 30) {
+        return { ...reader, status: 'Libre' }
+      }
+
+      return { ...reader, status: 'Ocupada' }
+    })
+
+    return new Response(JSON.stringify({ readers: result }))
+  } catch (err) {
+    return new Response(
+      JSON.stringify({ error: err.message }),
+      { status: 500 }
+    )
+  }
 }
