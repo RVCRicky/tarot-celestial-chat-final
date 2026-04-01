@@ -11,7 +11,7 @@ export async function POST(req) {
 
   const now = new Date().toISOString()
 
-  // 🔥 LIBERACIÓN FORZADA (SIN depender del sessionId)
+  // 🔥 LIBERACIÓN FORZADA (CLAVE)
   const { error } = await supabase
     .from('reader_statuses')
     .update({
@@ -22,16 +22,20 @@ export async function POST(req) {
     })
     .eq('reader_name', readerName)
 
+  // 🔥 ACTUALIZAR SESIÓN
   await supabase
     .from('chat_sessions')
     .update({
       mode: 'central',
       current_reader_name: null,
-      heartbeat_at: now
+      heartbeat_at: now,
+      status: 'inactive' // 👈 IMPORTANTE
     })
     .eq('id', sessionId)
 
-  if (error) return Response.json({ error: error.message }, { status: 500 })
+  if (error) {
+    return Response.json({ error: error.message }, { status: 500 })
+  }
 
   return Response.json({ ok: true })
 }
