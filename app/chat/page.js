@@ -752,7 +752,6 @@ setReaders(prev =>
 )
 
 // 🔥 sincronizar con backend
-await fetchReaders()
 
       if (!res.ok) {
         setMode('central')
@@ -790,8 +789,7 @@ await fetchReaders()
         targetName: prev.targetName || '',
         targetSign: prev.targetSign || ''
       }))
-      await fetchReaders()
-
+      
       setTyping(`${readerName} está escribiendo...`)
       queue(async () => {
         setTyping('')
