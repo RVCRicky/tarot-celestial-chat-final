@@ -1259,28 +1259,57 @@ export default function ChatPage() {
                 </div>
               ) : (
                 messages.map((m, idx) => {
-                  const isClient = m.sender === 'client'
-                  const senderLabel = isClient ? '' : m.sender_name || (m.sender === 'central' ? CENTRAL_NAME : activeReader || 'Tarotista')
-                  return (
-                    <div key={m.id || idx} style={{ display: 'flex', justifyContent: isClient ? 'flex-end' : 'flex-start' }}>
-                      <div style={{
-                        maxWidth: 'min(440px, 82%)',
-                        width: 'fit-content',
-                        padding: '12px 14px',
-                        borderRadius: 16,
-                        background: isClient ? '#6f3ea8' : '#faf6ff',
-                        color: isClient ? '#fff' : '#4b2a67',
-                        border: isClient ? 'none' : '1px solid #eadcf8',
-                        whiteSpace: 'pre-wrap',
-                        wordBreak: 'break-word',
-                        boxSizing: 'border-box'
-                      }}>
-                        {!isClient && <div style={{ fontSize: 11, fontWeight: 700, color: '#8a6a2f', marginBottom: 5 }}>{String(senderLabel).toUpperCase()}</div>}
-                        <div style={{ lineHeight: 1.5, fontSize: 15 }}>{m.text}</div>
-                      </div>
-                    </div>
-                  )
-                })
+  const isClient = m.sender === 'client'
+  const senderLabel = isClient
+    ? ''
+    : m.sender_name || (m.sender === 'central' ? CENTRAL_NAME : activeReader || 'Tarotista')
+
+  return (
+    <div
+      key={m.id || idx}
+      style={{
+        display: 'flex',
+        justifyContent: isClient ? 'flex-end' : 'flex-start',
+        paddingLeft: isClient ? 40 : 0,
+        paddingRight: isClient ? 0 : 40
+      }}
+    >
+      <div
+        style={{
+          display: 'inline-block',
+          maxWidth: '420px',
+          width: 'fit-content',
+          padding: '12px 14px',
+          borderRadius: isClient ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+          background: isClient ? '#6f3ea8' : '#faf6ff',
+          color: isClient ? '#fff' : '#4b2a67',
+          border: isClient ? 'none' : '1px solid #eadcf8',
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+          lineHeight: 1.5,
+          fontSize: 15,
+          boxSizing: 'border-box',
+          boxShadow: '0 4px 10px rgba(0,0,0,0.04)'
+        }}
+      >
+        {!isClient && (
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              color: '#8a6a2f',
+              marginBottom: 5
+            }}
+          >
+            {String(senderLabel).toUpperCase()}
+          </div>
+        )}
+
+        {m.text}
+      </div>
+    </div>
+  )
+})
               )}
 
               {!!typing && (
