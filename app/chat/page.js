@@ -713,7 +713,7 @@ export default function ChatPage() {
     return true
   }
 
-  const const beginTransfer = async (readerName, options = {}) => {
+ const beginTransfer = async (readerName, options = {}) => {
   const { skipCentralMessage = false } = options
 
   if (!skipCentralMessage) {
@@ -754,7 +754,7 @@ export default function ChatPage() {
 
         await addAndPersist(
           'central',
-          `Cielo, justo ahora ${readerName} ha pasado a estar ocupada. Si quieres te recomiendo a otra de las que tengo libres en este momento.`,
+          `Cielo, justo ahora ${readerName} ha pasado a estar ocupada. Si quieres te recomiendo a otra.`,
           CENTRAL_NAME
         )
 
@@ -762,7 +762,7 @@ export default function ChatPage() {
         return
       }
 
-      // 🔥 SOLO backend decide estado
+      // 🔥 SOLO backend manda
       await fetchReaders()
 
       resetVisibleConversation()
@@ -774,9 +774,7 @@ export default function ChatPage() {
       setMemory((prev) => ({
         ...prev,
         readerStage: 'intro',
-        lastReader: readerName,
-        targetName: prev.targetName || '',
-        targetSign: prev.targetSign || ''
+        lastReader: readerName
       }))
 
       setTyping(`${readerName} está escribiendo...`)
@@ -791,78 +789,6 @@ export default function ChatPage() {
     }
   }, 1200 + randomDelay)
 }
-
-    const randomDelay = 2600 + Math.floor(Math.random() * 2600)
-
-    queue(async () => {
-      const currentSessionId = sessionRef.current?.id || session?.id
-
-      const res = await fetch('/api/readers/claim', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          readerName,
-          profileId: profile.id,
-          sessionId: currentSessionId
-        })
-      })
-      const json = await res.json()
-
-      // 🔥 FORZAR estado ocupada en UI inmediatamente
-setReaders(prev =>
-  prev.map(r =>
-    r.name === readerName
-      ? { ...r, status: 'Ocupada' }
-      : r
-  )
-)
-
-// 🔥 sincronizar con backend
-
-      if (!res.ok) {
-        setMode('central')
-        setActiveReader(null)
-        await addAndPersist(
-          'central',
-          `Cielo, justo ahora ${readerName} ha pasado a estar ocupada. Si quieres te recomiendo a otra de las que tengo libres en este momento.`,
-          CENTRAL_NAME
-        )
-        await fetchReaders()
-        return
-      }
-
-      resetVisibleConversation()
-      setActiveReader(readerName)
-      setMode('reader')
-      setReaders((prev) =>
-        prev.map((reader) =>
-          reader.name === readerName
-            ? {
-                ...reader,
-                status: 'Ocupada',
-                occupied_by: profile.id,
-                active_session_id: currentSessionId
-              }
-            : reader
-        )
-      )
-      setPendingTransfer(null)
-      setPriceQuoteOpen(false)
-      setMemory((prev) => ({
-        ...prev,
-        readerStage: 'intro',
-        lastReader: readerName,
-        targetName: prev.targetName || '',
-        targetSign: prev.targetSign || ''
-      }))
-      
-      setTyping(`${readerName} está escribiendo...`)
-      queue(async () => {
-        setTyping('')
-        await addAndPersist('reader', readerGreeting(readerName), readerName)
-      }, 1800)
-    }, 1200 + randomDelay)
-  }
 
   const releaseReader = async (readerNameOverride = null) => {
     const readerName = readerNameOverride || activeReaderRef.current
