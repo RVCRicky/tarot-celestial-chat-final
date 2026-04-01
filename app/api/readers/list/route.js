@@ -17,6 +17,17 @@ export async function GET() {
       return new Response(JSON.stringify({ readers: [] }), { status: 200 })
     }
 
+    // 🔥 2. TRAER SESIONES ACTIVAS (CLAVE)
+    const { data: sessions } = await supabase
+      .from('chat_sessions')
+      .select('id, status')
+
+    const activeSessionIds = new Set(
+      (sessions || [])
+        .filter(s => s.status === 'active')
+        .map(s => s.id)
+    )
+
     // 🔥 traducir turno
     const translateShift = (shift) => {
       switch (shift) {
@@ -31,23 +42,39 @@ export async function GET() {
       }
     }
 
-    // 🔥 2. MAPEO CORRECTO
-    const readers = (data || []).map(r => {
-      let finalStatus = r.status || 'Libre'
+    // 🔥 detectar si está en su horario
+    const isShiftActive = (shift) => {
+      const hour = new Date().getHours()
 
-      // 🔥 prioridad absoluta: sesión activa
-      if (r.active_session_id) {
+      if (shift === 'morning') return hour >= 6 && hour < 14
+      if (shift === 'afternoon') return hour >= 14 && hour < 22
+      if (shift === 'night') return hour >= 22 || hour < 6
+
+      return true
+    }
+
+    // 🔥 3. MAPEO FINAL CORRECTO
+    const readers = (data || []).map(r => {
+      let finalStatus = 'Libre'
+
+      // ✅ 1. PRIORIDAD: sesión activa real
+      if (r.active_session_id && activeSessionIds.has(r.active_session_id)) {
         finalStatus = 'Ocupada'
       }
 
-      // 🔥 fallback si claim no guarda bien
-      if (r.occupied_by_profile_id) {
-        finalStatus = 'Ocupada'
+      // ✅ 2. SI NO → mirar horario
+      else if (!isShiftActive(r.shift)) {
+        finalStatus = 'Offline'
+      }
+
+      // ✅ 3. fallback por si DB tiene estado
+      else if (r.status === 'Offline') {
+        finalStatus = 'Offline'
       }
 
       return {
         name: r.reader_name,
-        specialty: translateShift(r.shift), // 👈 traducido
+        specialty: translateShift(r.shift),
         status: finalStatus
       }
     })
