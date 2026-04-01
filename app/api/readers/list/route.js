@@ -1,55 +1,53 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-)
-
 export async function GET() {
   try {
-    // 🔥 1. traer readers SIEMPRE
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY // 🔥 IMPORTANTE
+    )
+
+    // 1. readers
     const { data: readers, error } = await supabase
       .from('readers')
       .select('*')
 
     if (error) {
-      console.error('Error readers:', error)
-      return new Response(JSON.stringify({ readers: [] }))
+      console.error('ERROR READERS:', error)
+      return new Response(JSON.stringify({ readers: [] }), { status: 200 })
     }
 
-    // 🔥 2. traer sesiones activas (sin romper si falla)
+    // 2. sesiones activas (opcional)
     let sessions = []
     try {
-      const res = await supabase
+      const { data } = await supabase
         .from('sessions')
-        .select('reader_name, status')
+        .select('reader_name')
         .eq('status', 'active')
 
-      sessions = res.data || []
+      sessions = data || []
     } catch (e) {
-      console.log('sessions fallback')
+      console.log('sessions error ignored')
     }
 
-    // 🔥 3. marcar ocupadas
-    const readersFinal = readers.map((reader) => {
-      const isBusy = sessions.some(
-        (s) => s.reader_name === reader.name
-      )
+    // 3. marcar ocupadas
+    const result = readers.map(r => {
+      const busy = sessions.find(s => s.reader_name === r.name)
 
       return {
-        ...reader,
-        status: isBusy ? 'Ocupada' : reader.status || 'Libre'
+        ...r,
+        status: busy ? 'Ocupada' : (r.status || 'Libre')
       }
     })
 
     return new Response(
-      JSON.stringify({ readers: readersFinal }),
+      JSON.stringify({ readers: result }),
       { status: 200 }
     )
-  } catch (err) {
-    console.error('fatal error readers list:', err)
 
-    // 🔥 fallback TOTAL para no romper frontend
+  } catch (err) {
+    console.error('FATAL ERROR:', err)
+
     return new Response(
       JSON.stringify({ readers: [] }),
       { status: 200 }
