@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import {
   READERS,
@@ -20,8 +20,8 @@ const CENTRAL_NAME = 'Clara'
 function readerGreeting(name) {
   const reader = READERS.find((r) => r.name === name)
   return reader
-    ? `Hola cielo, soy ${name} de Tarot Celestial. ${reader.description} Estoy contigo, cuéntame con calma en qué te puedo ayudar hoy.`
-    : `Hola cielo, soy ${name} de Tarot Celestial. Estoy contigo, cuéntame con calma en qué te puedo ayudar hoy.`
+    ? `Hola cielo, soy ${name}. Ya estoy contigo. ${reader.description} Antes de entrar del todo en tu consulta, dime tu signo y cuéntame con calma qué quieres mirar conmigo.`
+    : `Hola cielo, soy ${name}. Ya estoy contigo. Antes de entrar del todo en tu consulta, dime tu signo y cuéntame con calma qué quieres mirar conmigo.`
 }
 
 function stripMarkdown(value) {
@@ -36,6 +36,54 @@ function stripMarkdown(value) {
 
 function includesAny(text, list) {
   return list.some((item) => text.includes(item))
+}
+
+function detectPackSelection(text) {
+  const lower = normalizeText(text)
+
+  if (
+    includesAny(lower, [
+      '10 preguntas',
+      'diez preguntas',
+      'pack 10',
+      'paquete 10',
+      'quiero 10',
+      'el de 10',
+      'la de 10'
+    ])
+  ) {
+    return { id: 'pack_10', label: '10 preguntas' }
+  }
+
+  if (
+    includesAny(lower, [
+      '5 preguntas',
+      'cinco preguntas',
+      'pack 5',
+      'paquete 5',
+      'quiero 5',
+      'el de 5',
+      'la de 5'
+    ])
+  ) {
+    return { id: 'pack_5', label: '5 preguntas' }
+  }
+
+  if (
+    includesAny(lower, [
+      '3 preguntas',
+      'tres preguntas',
+      'pack 3',
+      'paquete 3',
+      'quiero 3',
+      'el de 3',
+      'la de 3'
+    ])
+  ) {
+    return { id: 'pack_3', label: '3 preguntas' }
+  }
+
+  return null
 }
 
 function buildControlledCentralReply({ text, chosenReader }) {
@@ -173,8 +221,8 @@ function isAffirmative(text) {
       'claro',
       'de acuerdo',
       'hazlo',
-      'pásame',
       'pasame',
+      'pásame',
       'quiero hablar con ella',
       'quiero con ella',
       'dale',
@@ -261,6 +309,7 @@ export default function ChatPage() {
   const [reservationTime, setReservationTime] = useState('')
   const [reservationNote, setReservationNote] = useState('')
   const [pendingTransfer, setPendingTransfer] = useState(null)
+  const [priceQuoteOpen, setPriceQuoteOpen] = useState(false)
   const [memory, setMemory] = useState({
     topic: '',
     targetName: '',
@@ -275,18 +324,30 @@ export default function ChatPage() {
   const timersRef = useRef([])
   const sessionRef = useRef(null)
   const activeReaderRef = useRef(null)
+  const modeRef = useRef('central')
+  const viewStartedAtRef = useRef(null)
+  const unloadingRef = useRef(false)
 
   const onlineReaders = useMemo(() => readers.filter((r) => r.status !== 'Offline'), [readers])
   const offlineReaders = useMemo(() => readers.filter((r) => r.status === 'Offline'), [readers])
-
 
   useEffect(() => {
     activeReaderRef.current = activeReader
   }, [activeReader])
 
+  useEffect(() => {
+    modeRef.current = mode
+  }, [mode])
+
   const queue = (fn, delay) => {
     const id = setTimeout(fn, delay)
     timersRef.current.push(id)
+  }
+
+  const resetVisibleConversation = () => {
+    viewStartedAtRef.current = new Date().toISOString()
+    setMessages([])
+    setKnownMessageIds({})
   }
 
   const addLocalMessage = (message) => {
@@ -358,7 +419,7 @@ export default function ChatPage() {
     const cleanText = stripMarkdown(text)
 
     const label = sender === 'reader'
-      ? `${senderName || activeReader || 'Tarotista'} está escribiendo...`
+      ? `${senderName || activeReaderRef.current || 'Tarotista'} está escribiendo...`
       : `${senderName || CENTRAL_NAME} está escribiendo...`
 
     setTyping(label)
@@ -382,7 +443,11 @@ export default function ChatPage() {
   const fetchMessages = async (sessionId) => {
     const res = await fetch(`/api/session/messages?sessionId=${sessionId}`)
     const json = await res.json()
-    const incoming = json.messages || []
+    const cutoff = viewStartedAtRef.current
+    const incoming = (json.messages || []).filter((m) => {
+      if (!cutoff) return true
+      return !m.created_at || new Date(m.created_at).getTime() >= new Date(cutoff).getTime()
+    })
 
     setMessages((prev) => {
       const prevIds = new Set(prev.map((m) => m.id).filter(Boolean))
@@ -417,6 +482,47 @@ export default function ChatPage() {
         currentReaderName: currentReaderName || null
       })
     })
+  }
+
+  const refreshProfileCredits = async (profileId) => {
+    if (!profileId) return
+    const { data: freshProfile } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', profileId)
+      .maybeSingle()
+
+    if (freshProfile) {
+      setProfile(freshProfile)
+      setCredits(freshProfile.credits || 0)
+      setFreeQuestionUsed(freshProfile.free_question_used || false)
+    }
+  }
+
+  const beginCheckoutFlow = async (pack, readerName = '') => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('tc_checkout_pack', pack.id)
+      window.localStorage.setItem('tc_checkout_label', pack.label)
+      if (readerName) {
+        window.localStorage.setItem('tc_resume_reader', readerName)
+        window.localStorage.setItem('tc_last_reader', readerName)
+      } else {
+        window.localStorage.removeItem('tc_resume_reader')
+      }
+    }
+
+    setPriceQuoteOpen(false)
+
+    await showTypingAndAnswer(
+      'central',
+      CENTRAL_NAME,
+      `Perfecto cielo, te preparo ahora mismo el cobro del paquete de ${pack.label}. Te abro la pasarela segura y, en cuanto quede confirmado, sigo contigo aquí dentro.`,
+      1500
+    )
+
+    queue(() => {
+      window.location.href = `/payment?pack=${encodeURIComponent(pack.id)}&auto=1`
+    }, 1900)
   }
 
   useEffect(() => {
@@ -455,28 +561,44 @@ export default function ChatPage() {
       if (sessionJson.session?.mode === 'reader' && sessionJson.session?.current_reader_name) {
         setMode('reader')
         setActiveReader(sessionJson.session.current_reader_name)
-      } else {
-        setMode('central')
-        setActiveReader(null)
+        setMemory((prev) => ({
+          ...prev,
+          lastReader: sessionJson.session.current_reader_name
+        }))
       }
 
       await fetchReaders()
       const existingMessages = await fetchMessages(sessionJson.session.id)
 
-      if (sessionJson.session && (!existingMessages || existingMessages.length === 0)) {
+      const paymentSuccess = typeof window !== 'undefined' && window.localStorage.getItem('tc_payment_success') === '1'
+      const resumeReader = typeof window !== 'undefined' ? window.localStorage.getItem('tc_resume_reader') || '' : ''
+
+      if (paymentSuccess) {
+        window.localStorage.removeItem('tc_payment_success')
+        await refreshProfileCredits(profileData.id)
+        resetVisibleConversation()
+
+        if (resumeReader) {
+          queue(async () => {
+            await addAndPersist(
+              'central',
+              `Perfecto ${profileData.display_name}, ya veo el pago confirmado. Te paso ahora mismo con ${resumeReader}. Un momento, cielo.`,
+              CENTRAL_NAME
+            )
+            await beginTransfer(resumeReader, { skipCentralMessage: true })
+          }, 700)
+        } else {
+          queue(async () => {
+            await addAndPersist(
+              'central',
+              `Perfecto ${profileData.display_name}, ya veo que el pago se ha confirmado y tus créditos están activos. Dime ahora con qué tarotista quieres seguir o, si prefieres, te recomiendo yo la mejor para ti.`,
+              CENTRAL_NAME
+            )
+          }, 700)
+        }
+      } else if (sessionJson.session && (!existingMessages || existingMessages.length === 0)) {
         const welcome = `Hola ${profileData.display_name}, bienvenida de nuevo a Tarot Celestial. Soy ${CENTRAL_NAME}, del central. ¿En qué te puedo ayudar hoy, cielo?`
         await addAndPersist('central', welcome, CENTRAL_NAME)
-      }
-
-      if (typeof window !== 'undefined' && window.localStorage.getItem('tc_payment_success') === '1') {
-        window.localStorage.removeItem('tc_payment_success')
-        queue(async () => {
-          await addAndPersist(
-            'central',
-            `Perfecto ${profileData.display_name}, veo que ya has realizado el pago y ya tienes los créditos asignados. ¿Deseas seguir hablando con ${window.localStorage.getItem('tc_last_reader') || 'tu tarotista'} o prefieres probar a otra de nuestras chicas?`,
-            CENTRAL_NAME
-          )
-        }, 900)
       }
 
       setLoading(false)
@@ -490,51 +612,38 @@ export default function ChatPage() {
     if (!session?.id) return
     const messagesPoll = setInterval(() => fetchMessages(session.id), 3500)
     const readersPoll = setInterval(fetchReaders, 6000)
-    const beat = setInterval(() => heartbeat(mode, activeReader), 15000)
+    const beat = setInterval(() => heartbeat(modeRef.current, activeReaderRef.current), 12000)
 
     return () => {
       clearInterval(messagesPoll)
       clearInterval(readersPoll)
       clearInterval(beat)
     }
-  }, [session?.id, mode, activeReader])
-
+  }, [session?.id])
 
   useEffect(() => {
     if (!session?.id) return
 
-    const closeCurrentSession = async () => {
-      const readerName = activeReaderRef.current
+    const payload = () => JSON.stringify({
+      sessionId: session.id,
+      currentReaderName: activeReaderRef.current || null,
+      mode: modeRef.current || 'central'
+    })
 
+    const onUnload = () => {
+      if (unloadingRef.current) return
+      unloadingRef.current = true
       try {
-        await fetch('/api/session/close', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sessionId: session.id,
-            readerName: readerName || null
-          }),
-          keepalive: true
-        })
-      } catch {
-        // silencio intencional para no romper cierre de página
-      }
+        navigator.sendBeacon('/api/session/close', payload())
+      } catch {}
     }
 
-    const handlePageHide = () => {
-      closeCurrentSession()
-    }
-
-    const handleBeforeUnload = () => {
-      closeCurrentSession()
-    }
-
-    window.addEventListener('pagehide', handlePageHide)
-    window.addEventListener('beforeunload', handleBeforeUnload)
+    window.addEventListener('beforeunload', onUnload)
+    window.addEventListener('pagehide', onUnload)
 
     return () => {
-      window.removeEventListener('pagehide', handlePageHide)
-      window.removeEventListener('beforeunload', handleBeforeUnload)
+      window.removeEventListener('beforeunload', onUnload)
+      window.removeEventListener('pagehide', onUnload)
     }
   }, [session?.id])
 
@@ -564,15 +673,13 @@ export default function ChatPage() {
           country: profile?.country || '',
           conversation: messages.slice(-12).map((m) => ({
             sender: m.sender || m.sender_name || 'system',
-            text: m.text,
-            role: m.sender === 'client' ? 'user' : 'assistant',
-            content: m.text
+            text: m.text
           })),
           latestUserMessage,
           availableReaders: availableReadersList,
           memory: {
             ...memory,
-            readerName: activeReader,
+            readerName: activeReaderRef.current,
             credits,
             freeQuestionUsed
           }
@@ -603,16 +710,20 @@ export default function ChatPage() {
     return true
   }
 
-  const beginTransfer = async (readerName) => {
-    await addAndPersist('central', `Vale cielo, te transfiero con ${readerName}. Un momento...`, CENTRAL_NAME)
+  const beginTransfer = async (readerName, options = {}) => {
+    const { skipCentralMessage = false } = options
+
+    if (!skipCentralMessage) {
+      await addAndPersist('central', `Vale cielo, te transfiero con ${readerName}. Un momento...`, CENTRAL_NAME)
+    }
 
     queue(() => {
       setMode('connecting')
       setTyping('')
       setActiveReader(readerName)
-    }, 3000)
+    }, 1200)
 
-    const randomDelay = 6000 + Math.floor(Math.random() * 14000)
+    const randomDelay = 2600 + Math.floor(Math.random() * 2600)
 
     queue(async () => {
       const currentSessionId = sessionRef.current?.id || session?.id
@@ -640,85 +751,96 @@ export default function ChatPage() {
         return
       }
 
-      setMessages([])
-      setKnownMessageIds({})
+      resetVisibleConversation()
       setActiveReader(readerName)
       setMode('reader')
       setPendingTransfer(null)
+      setPriceQuoteOpen(false)
       setMemory((prev) => ({
         ...prev,
         readerStage: 'intro',
-        lastReader: readerName
+        lastReader: readerName,
+        targetName: prev.targetName || '',
+        targetSign: prev.targetSign || ''
       }))
       await fetchReaders()
-      await addAndPersist('reader', readerGreeting(readerName), readerName)
-    }, 3000 + randomDelay)
+
+      setTyping(`${readerName} está escribiendo...`)
+      queue(async () => {
+        setTyping('')
+        await addAndPersist('reader', readerGreeting(readerName), readerName)
+      }, 1800)
+    }, 1200 + randomDelay)
   }
 
-  const releaseReader = useCallback(async (readerName = null) => {
-    const nameToRelease = readerName || activeReaderRef.current || activeReader
-    if (!nameToRelease) return
+  const releaseReader = async (readerNameOverride = null) => {
+    const readerName = readerNameOverride || activeReaderRef.current
+    const currentSessionId = sessionRef.current?.id || session?.id
+    if (!readerName || !currentSessionId) return
 
     await fetch('/api/readers/release', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ readerName: nameToRelease })
+      body: JSON.stringify({ readerName, sessionId: currentSessionId })
     })
 
-    if (activeReaderRef.current === nameToRelease) {
-      activeReaderRef.current = null
-    }
+    await fetch('/api/session/heartbeat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId: currentSessionId,
+        mode: 'central',
+        currentReaderName: null
+      })
+    })
 
     await fetchReaders()
-  }, [activeReader])
-
-  const shouldExplainRecommendation = (text) => {
-    const lower = normalizeText(text)
-    return includesAny(lower, [
-      'como sabes',
-      'cómo sabes',
-      'por que ella',
-      'por qué ella',
-      'por que me recomiendas',
-      'por qué me recomiendas',
-      'porque ella',
-      'porque dices',
-      'en que te basas',
-      'en qué te basas'
-    ])
-  }
-
-  const buildRecommendationReason = (text, chosenReader) => {
-    if (!chosenReader) {
-      return 'No te lo digo al azar, cielo. Simplemente con lo que me vas contando voy viendo qué tarotista te puede encajar mejor.'
-    }
-
-    const lower = normalizeText(text)
-
-    if (includesAny(lower, ['amor', 'pareja', 'ex', 'volver', 'reconcili', 'celos', 'infidel'])) {
-      return `Porque por cómo me lo estás planteando noto un tema muy emocional y de vínculo, y ${chosenReader.name} suele entrar muy bien justo en ese tipo de historias. No te lo digo por decirte un nombre.`
-    }
-
-    if (includesAny(lower, ['trabajo', 'dinero', 'econom', 'laboral', 'negocio', 'empleo'])) {
-      return `Porque cuando me hablan de trabajo, bloqueos o estabilidad, ${chosenReader.name} suele ser de las que ve esto con más claridad. Por eso te la he dicho a ella.`
-    }
-
-    if (includesAny(lower, ['energia', 'energía', 'bloqueo', 'espiritual', 'camino', 'ansiedad', 'agobio'])) {
-      return `Porque lo que me estás transmitiendo tiene más carga energética que otra cosa, y ${chosenReader.name} conecta muy bien con ese tipo de consulta. Por eso te la he recomendado.`
-    }
-
-    if (includesAny(lower, ['familia', 'madre', 'padre', 'hijo', 'hija', 'hermano', 'hermana'])) {
-      return `Porque por la forma en la que me lo cuentas veo un tema delicado y bastante personal, y ${chosenReader.name} suele llevar muy bien consultas de ese tipo. Por eso te la he dicho.`
-    }
-
-    return `Porque por el tono de lo que me estás contando siento que ${chosenReader.name} te puede entender mejor y entrar más fino en tu caso. No es algo al azar, cielo.`
   }
 
   const answerCentral = async (text) => {
     const lower = normalizeText(text)
+    const available = readers.filter((r) => r.status === 'Libre')
+    const topic = topicFromText(text)
+
+    setMemory((prev) => ({
+      ...prev,
+      topic: topic !== 'general' ? topic : prev.topic
+    }))
+
+    const selectedPack = detectPackSelection(text)
+    if (selectedPack && (priceQuoteOpen || lower.includes('preguntas') || lower.includes('pack') || lower.includes('paquete'))) {
+      const readerForPayment = pendingTransfer || (memory.topic && chooseReaderForTopic(memory.topic, available, memory.topic)?.name) || ''
+      await beginCheckoutFlow(selectedPack, readerForPayment)
+      return
+    }
+
+    if (
+      pendingTransfer &&
+      includesAny(lower, [
+        'como sabes',
+        'cómo sabes',
+        'por que ella',
+        'por qué ella',
+        'por que me la recomiendas',
+        'por qué me la recomiendas',
+        'que tiene ella',
+        'qué tiene ella'
+      ])
+    ) {
+      const chosen = readers.find((r) => r.name === pendingTransfer)
+      if (chosen) {
+        await showTypingAndAnswer(
+          'central',
+          CENTRAL_NAME,
+          `Porque por lo que me has contado, tu energía encaja más con la forma de mirar de ${chosen.name}. ${chosen.description} No te la estoy diciendo al azar, cielo. Si quieres, te paso con ella.`,
+          1500
+        )
+        return
+      }
+    }
 
     const directReader = readers.find((r) =>
-      lower.includes(r.name.toLowerCase())
+      lower.includes(normalizeText(r.name))
     )
 
     if (directReader && directReader.status === 'Libre') {
@@ -738,8 +860,6 @@ export default function ChatPage() {
     }
 
     if (lower.includes('quien tienes') || lower.includes('quién tienes')) {
-      const available = readers.filter((r) => r.status === 'Libre')
-
       if (!available.length) {
         await showTypingAndAnswer(
           'central',
@@ -776,23 +896,13 @@ export default function ChatPage() {
       return
     }
 
-    if (pendingTransfer && shouldExplainRecommendation(text)) {
-      const pendingReader = readers.find((r) => r.name === pendingTransfer) || null
-      await showTypingAndAnswer(
-        'central',
-        CENTRAL_NAME,
-        `${buildRecommendationReason(text, pendingReader)} Si quieres, te paso con ${pendingTransfer}.`,
-        1500
-      )
-      return
-    }
-
     if (lower.includes('precio') || lower.includes('credit') || lower.includes('pagar')) {
       const p = pricesForCountry(profile?.country || '')
+      setPriceQuoteOpen(true)
       await showTypingAndAnswer(
         'central',
         CENTRAL_NAME,
-        `Claro cielo, ahora mismo tienes 3 preguntas por ${p.p3}, 5 preguntas por ${p.p5} y 10 preguntas por ${p.p10}. Tú me dices cuál deseas adquirir y te paso el enlace de pago.`,
+        `Claro cielo, ahora mismo tienes 3 preguntas por ${p.p3}, 5 preguntas por ${p.p5} y 10 preguntas por ${p.p10}. Tú me dices cuál quieres y te abro el cobro seguro.`,
         1400
       )
       return
@@ -809,8 +919,6 @@ export default function ChatPage() {
       return
     }
 
-    const available = readers.filter((r) => r.status === 'Libre')
-
     if (!available.length) {
       await showTypingAndAnswer(
         'central',
@@ -821,7 +929,6 @@ export default function ChatPage() {
       return
     }
 
-    const topic = topicFromText(text)
     const chosenReader = chooseReaderForTopic(topic, available, text)
     const baseReply = buildControlledCentralReply({
       text,
@@ -841,6 +948,7 @@ export default function ChatPage() {
       setPendingTransfer(chosenReader.name)
     }
 
+    setPriceQuoteOpen(false)
     await showTypingAndAnswer('central', CENTRAL_NAME, reply, 1700)
   }
 
@@ -866,8 +974,8 @@ export default function ChatPage() {
       const ai = await askAI('reader', text)
       await showTypingAndAnswer(
         'reader',
-        activeReader,
-        ai || 'Claro cielo, dime tu horóscopo para que pueda entrar mejor en tu energía y explícame un poquito más la pregunta que quieres mirar conmigo.',
+        activeReaderRef.current,
+        ai || 'Claro cielo, ya te sigo mejor. Cuéntame ahora la pregunta principal que quieres que te mire conmigo y lo vemos despacio.',
         2200
       )
       return
@@ -877,7 +985,7 @@ export default function ChatPage() {
       if (!isMainQuestion(text)) {
         await showTypingAndAnswer(
           'reader',
-          activeReader,
+          activeReaderRef.current,
           'Te sigo leyendo, cielo. Dame un poquito más de detalle para poder ver exactamente lo que quieres consultar.',
           1800
         )
@@ -886,11 +994,10 @@ export default function ChatPage() {
 
       const allowed = await chargeMainQuestion()
       if (!allowed) {
-        await releaseReader(activeReader)
-        setPendingTransfer(null)
+        await releaseReader()
         setMode('central')
         setActiveReader(null)
-        await heartbeat('central', null)
+        resetVisibleConversation()
         await showTypingAndAnswer(
           'central',
           CENTRAL_NAME,
@@ -904,7 +1011,7 @@ export default function ChatPage() {
       const ai = await askAI('reader', text)
       await showTypingAndAnswer(
         'reader',
-        activeReader,
+        activeReaderRef.current,
         ai || `Vamos a mirarlo, cielo. ¿Sabes el horóscopo de ${memory.targetName || 'esa persona'}?`,
         2600
       )
@@ -915,7 +1022,7 @@ export default function ChatPage() {
       setMemory((prev) => ({ ...prev, readerStage: 'awaiting-card' }))
       await showTypingAndAnswer(
         'reader',
-        activeReader,
+        activeReaderRef.current,
         'Perfecto cielo, dime ahora un número del 1 al 22 y elige izquierda, derecha o centro.',
         1900
       )
@@ -927,7 +1034,7 @@ export default function ChatPage() {
       const ai = await askAI('reader', text)
       await showTypingAndAnswer(
         'reader',
-        activeReader,
+        activeReaderRef.current,
         ai || `Estoy haciendo la tirada, cielo... Dame un instante. Por lo que veo, ${memory.targetName || 'esa persona'} sí quiere volver, pero hay orgullo, bloqueo y una energía que todavía no termina de moverse como debería. No veo esto cerrado del todo.`,
         5200
       )
@@ -940,18 +1047,17 @@ export default function ChatPage() {
         const ai = await askAI('reader', text)
         await showTypingAndAnswer(
           'reader',
-          activeReader,
+          activeReaderRef.current,
           ai || 'No cielo, lo que me marca la energía es que el movimiento viene más desde él que desde ti. Pero si quieres que profundicemos un poco más, ya necesitaríamos créditos para seguir con la consulta.',
           3200
         )
         return
       }
-
     }
 
     if (stage === 'followup-used') {
-  return
-}
+      return
+    }
   }
 
   const submitReservation = async () => {
@@ -1011,18 +1117,30 @@ export default function ChatPage() {
     }
   }
 
-  const handleLogout = async () => {
-    const readerToRelease = activeReaderRef.current
-    if (readerToRelease) {
-      await releaseReader(readerToRelease)
+  const handleBackToCentral = async () => {
+    if (activeReaderRef.current) {
+      await releaseReader()
     }
-    if (sessionRef.current?.id) {
+    setActiveReader(null)
+    setMode('central')
+    resetVisibleConversation()
+    setMemory((prev) => ({ ...prev, readerStage: 'intro' }))
+    await addAndPersist('central', `Hola ${profile.display_name}, ya estoy otra vez contigo. Dime qué necesitas y te ayudo encantada.`, CENTRAL_NAME)
+  }
+
+  const handleLogout = async () => {
+    const currentSessionId = sessionRef.current?.id || session?.id
+    if (activeReaderRef.current) {
+      await releaseReader()
+    }
+    if (currentSessionId) {
       await fetch('/api/session/close', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sessionId: sessionRef.current.id,
-          readerName: readerToRelease || null
+          sessionId: currentSessionId,
+          currentReaderName: activeReaderRef.current || null,
+          mode: modeRef.current || 'central'
         })
       })
     }
@@ -1185,15 +1303,7 @@ export default function ChatPage() {
               Comprar créditos
             </a>
 
-            <button onClick={async () => {
-              const readerToRelease = activeReaderRef.current
-              if (readerToRelease) await releaseReader(readerToRelease)
-              setPendingTransfer(null)
-              setActiveReader(null)
-              setMode('central')
-              await heartbeat('central', null)
-              await addAndPersist('central', `Hola ${profile.display_name}, ya estoy otra vez contigo. Dime qué necesitas y te ayudo encantada.`, CENTRAL_NAME)
-            }} style={{ width: '100%', padding: '14px 16px', borderRadius: 14, border: '1px solid #dccca4', background: '#fff', color: '#6f3ea8', fontWeight: 800, cursor: 'pointer', marginBottom: 10 }}>
+            <button onClick={handleBackToCentral} style={{ width: '100%', padding: '14px 16px', borderRadius: 14, border: '1px solid #dccca4', background: '#fff', color: '#6f3ea8', fontWeight: 800, cursor: 'pointer', marginBottom: 10 }}>
               Volver con el central
             </button>
 

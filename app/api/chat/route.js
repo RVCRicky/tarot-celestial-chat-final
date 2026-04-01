@@ -115,9 +115,9 @@ export async function POST(req) {
     const body = await req.json()
 
     // 🔥 CONTEXTO REAL (CLAVE)
-    const messagesContext = body.messages
-      ?.slice(-6)
-      .map(m => `${m.role}: ${m.content}`)
+    const messagesContext = (body.conversation || body.messages || [])
+      .slice(-10)
+      .map((m) => `${m.sender || m.role || 'system'}: ${m.text || m.content || ''}`)
       .join('\n')
 
     const prompt = buildPrompt(body.role, {

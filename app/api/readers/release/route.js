@@ -4,7 +4,7 @@ import { READERS, currentShift } from '../../../../lib/chatShared'
 export async function POST(req) {
   const supabase = getServiceSupabase()
   const body = await req.json()
-  const { readerName } = body
+  const { readerName, sessionId } = body
 
   const reader = READERS.find((r) => r.name === readerName)
   const shiftOnline = reader?.shift === currentShift()
@@ -18,6 +18,16 @@ export async function POST(req) {
       last_seen_at: new Date().toISOString()
     })
     .eq('reader_name', readerName)
+    .eq('active_session_id', sessionId)
+
+  await supabase
+    .from('chat_sessions')
+    .update({
+      mode: 'central',
+      current_reader_name: null,
+      heartbeat_at: new Date().toISOString()
+    })
+    .eq('id', sessionId)
 
   if (error) return Response.json({ error: error.message }, { status: 500 })
   return Response.json({ ok: true })

@@ -1,43 +1,64 @@
 import { getServiceSupabase } from '../../../../lib/serverSupabase'
-import { READERS, currentShift } from '../../../../lib/chatShared'
 
-function readerReleaseStatus(readerName) {
-  const reader = READERS.find((r) => r.name === readerName)
-  const shiftOnline = reader?.shift === currentShift()
-  return shiftOnline ? 'Libre' : 'Offline'
-}
+async function cleanupStaleSessions(supabase) {
+  const staleBefore = new Date(Date.now() - 45000).toISOString()
 
-export async function POST(req) {
-  try {
-    const supabase = getServiceSupabase()
-    const body = await req.json()
+  const { data: staleSessions } = await supabase
+    .from('chat_sessions')
+    .select('id,current_reader_name')
+    .eq('status', 'active')
+    .lt('heartbeat_at', staleBefore)
 
-    if (body.sessionId) {
-      await supabase
-        .from('chat_sessions')
-        .update({
-          status: 'closed',
-          mode: 'central',
-          current_reader_name: null,
-          heartbeat_at: new Date().toISOString()
-        })
-        .eq('id', body.sessionId)
-    }
-
-    if (body.readerName) {
+  for (const session of staleSessions || []) {
+    if (session.current_reader_name) {
       await supabase
         .from('reader_statuses')
         .update({
-          status: readerReleaseStatus(body.readerName),
+          status: 'Libre',
           occupied_by_profile_id: null,
           active_session_id: null,
           last_seen_at: new Date().toISOString()
         })
-        .eq('reader_name', body.readerName)
+        .eq('reader_name', session.current_reader_name)
+        .eq('active_session_id', session.id)
     }
-
-    return Response.json({ ok: true })
-  } catch (error) {
-    return Response.json({ error: error.message || 'No se pudo cerrar la sesión' }, { status: 500 })
   }
+
+  await supabase
+    .from('chat_sessions')
+    .update({ status: 'closed', current_reader_name: null, mode: 'closed' })
+    .eq('status', 'active')
+    .lt('heartbeat_at', staleBefore)
+}
+
+export async function POST(req) {
+  const supabase = getServiceSupabase()
+  const body = await req.json()
+
+  await cleanupStaleSessions(supabase)
+
+  if (body.currentReaderName) {
+    await supabase
+      .from('reader_statuses')
+      .update({
+        status: 'Libre',
+        occupied_by_profile_id: null,
+        active_session_id: null,
+        last_seen_at: new Date().toISOString()
+      })
+      .eq('reader_name', body.currentReaderName)
+      .eq('active_session_id', body.sessionId)
+  }
+
+  await supabase
+    .from('chat_sessions')
+    .update({
+      status: 'closed',
+      current_reader_name: null,
+      mode: body.mode === 'reader' ? 'closed' : body.mode || 'closed',
+      heartbeat_at: new Date().toISOString()
+    })
+    .eq('id', body.sessionId)
+
+  return Response.json({ ok: true })
 }
