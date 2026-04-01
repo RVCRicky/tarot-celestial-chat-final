@@ -18,15 +18,11 @@ export async function GET() {
     }
 
     // 🔥 2. TRAER SESIONES ACTIVAS (CLAVE)
-    const { data: sessions } = await supabase
-      .from('chat_sessions')
-      .select('id, status')
-
-    const activeSessionIds = new Set(
-      (sessions || [])
-        .filter(s => s.status === 'active')
-        .map(s => s.id)
-    )
+   const activeSessionIds = new Set(
+  (data || [])
+    .filter(r => r.active_session_id)
+    .map(r => r.active_session_id)
+)
 
     // 🔥 traducir turno
     const translateShift = (shift) => {
@@ -55,29 +51,24 @@ export async function GET() {
 
     // 🔥 3. MAPEO FINAL CORRECTO
     const readers = (data || []).map(r => {
-      let finalStatus = 'Libre'
+  let finalStatus = 'Libre'
 
-      // ✅ 1. PRIORIDAD: sesión activa real
-      if (r.active_session_id && activeSessionIds.has(r.active_session_id)) {
-        finalStatus = 'Ocupada'
-      }
+  // 🔥 SI TIENE SESSION → OCUPADA
+  if (r.active_session_id) {
+    finalStatus = 'Ocupada'
+  }
 
-      // ✅ 2. SI NO → mirar horario
-      else if (!isShiftActive(r.shift)) {
-        finalStatus = 'Offline'
-      }
+  // 🔥 SI NO → HORARIO
+  else if (!isShiftActive(r.shift)) {
+    finalStatus = 'Offline'
+  }
 
-      // ✅ 3. fallback por si DB tiene estado
-      else if (r.status === 'Offline') {
-        finalStatus = 'Offline'
-      }
-
-      return {
-        name: r.reader_name,
-        specialty: translateShift(r.shift),
-        status: finalStatus
-      }
-    })
+  return {
+    name: r.reader_name,
+    specialty: translateShift(r.shift),
+    status: finalStatus
+  }
+})
 
     return new Response(
       JSON.stringify({ readers }),
