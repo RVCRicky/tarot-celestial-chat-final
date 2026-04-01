@@ -8,7 +8,7 @@ export async function GET() {
     )
 
     const { data, error } = await supabase
-      .from('readers')
+      .from('reader_statuses')
       .select('*')
 
     if (error) {
