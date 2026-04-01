@@ -17,18 +17,37 @@ export async function GET() {
       return new Response(JSON.stringify({ readers: [] }), { status: 200 })
     }
 
-    // 🔥 2. MAPEAR A LO QUE ESPERA TU FRONTEND
+    // 🔥 traducir turno
+    const translateShift = (shift) => {
+      switch (shift) {
+        case 'morning':
+          return 'Mañana'
+        case 'afternoon':
+          return 'Tarde'
+        case 'night':
+          return 'Noche'
+        default:
+          return shift || ''
+      }
+    }
+
+    // 🔥 2. MAPEO CORRECTO
     const readers = (data || []).map(r => {
       let finalStatus = r.status || 'Libre'
 
-      // 🔥 si hay alguien ocupando → FORZAMOS ocupada
-      if (r.occupied_by_profile_id || r.active_session_id) {
+      // 🔥 prioridad absoluta: sesión activa
+      if (r.active_session_id) {
+        finalStatus = 'Ocupada'
+      }
+
+      // 🔥 fallback si claim no guarda bien
+      if (r.occupied_by_profile_id) {
         finalStatus = 'Ocupada'
       }
 
       return {
         name: r.reader_name,
-        specialty: r.shift || '',
+        specialty: translateShift(r.shift), // 👈 traducido
         status: finalStatus
       }
     })
