@@ -8,7 +8,7 @@ export async function POST(req) {
 
   await cleanupReaderSessionState(supabase)
 
-  // 🔥 LIMPIEZA FORZADA DEL READER (CLAVE)
+  // 🔥 LIMPIEZA FORZADA DEL READER
   await supabase
     .from('reader_statuses')
     .update({
@@ -38,16 +38,18 @@ export async function POST(req) {
 
   const now = new Date().toISOString()
 
+  // 🔥 FIX REAL → ASEGURAR SESIÓN ACTIVA (CLAVE)
   await supabase
     .from('chat_sessions')
-    .update({
+    .upsert({
+      id: sessionId,
       mode: 'reader',
       current_reader_name: readerName,
       heartbeat_at: now,
       status: 'active'
     })
-    .eq('id', sessionId)
 
+  // 🔥 MARCAR READER COMO OCUPADA
   const { error } = await supabase
     .from('reader_statuses')
     .update({
@@ -58,7 +60,9 @@ export async function POST(req) {
     })
     .eq('reader_name', readerName)
 
-  if (error) return Response.json({ error: error.message }, { status: 500 })
+  if (error) {
+    return Response.json({ error: error.message }, { status: 500 })
+  }
 
   return Response.json({ ok: true })
 }
