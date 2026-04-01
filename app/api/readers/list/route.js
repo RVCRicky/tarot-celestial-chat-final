@@ -1,71 +1,49 @@
-import { getServiceSupabase } from '../../../../lib/serverSupabase'
-import { READERS, currentShift } from '../../../../lib/chatShared'
 
-async function cleanupStaleSessions(supabase) {
-  const staleBefore = new Date(Date.now() - 45000).toISOString()
+import { createClient } from '@supabase/supabase-js'
 
-  const { data: staleSessions } = await supabase
-    .from('chat_sessions')
-    .select('id,current_reader_name')
-    .eq('status', 'active')
-    .lt('heartbeat_at', staleBefore)
-
-  for (const session of staleSessions || []) {
-    if (session.current_reader_name) {
-      await supabase
-        .from('reader_statuses')
-        .update({
-          status: 'Libre',
-          occupied_by_profile_id: null,
-          active_session_id: null,
-          last_seen_at: new Date().toISOString()
-        })
-        .eq('reader_name', session.current_reader_name)
-        .eq('active_session_id', session.id)
-    }
-  }
-
-  await supabase
-    .from('chat_sessions')
-    .update({ status: 'closed', current_reader_name: null, mode: 'closed' })
-    .eq('status', 'active')
-    .lt('heartbeat_at', staleBefore)
-}
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+)
 
 export async function GET() {
-  await supabase
-    .from('sessions')
-    .update({ status: 'closed' })
-    .lt('last_activity', new Date(Date.now() - 30000).toISOString())
-    .eq('status', 'active')
-  const supabase = getServiceSupabase()
-  const shift = currentShift()
+  try {
+    const now = new Date()
 
-  await cleanupStaleSessions(supabase)
+    // limpiar sesiones muertas
+    await supabase
+      .from('sessions')
+      .update({ status: 'closed' })
+      .lt('last_activity', new Date(Date.now() - 30000).toISOString())
+      .eq('status', 'active')
 
-  const { data: statusRows } = await supabase
-    .from('reader_statuses')
-    .select('*')
+    const { data: readers, error: rError } = await supabase
+      .from('readers')
+      .select('*')
 
-  const rows = statusRows || []
+    if (rError) throw rError
 
-  const merged = READERS.map((reader) => {
-    const dbRow = rows.find((r) => r.reader_name === reader.name)
-    const shiftOnline = reader.shift === shift
+    const { data: sessions, error: sError } = await supabase
+      .from('sessions')
+      .select('*')
+      .eq('status', 'active')
 
-    let status = shiftOnline ? 'Libre' : 'Offline'
+    if (sError) throw sError
 
-    if (dbRow?.admin_force_status === 'offline') status = 'Offline'
-    if (dbRow?.admin_force_status === 'online') status = 'Libre'
-    if (dbRow?.status === 'Ocupada' && dbRow?.active_session_id) status = 'Ocupada'
+    const result = readers.map((reader) => {
+      const active = sessions.find(s => s.reader_id === reader.id)
 
-    return {
-      ...reader,
-      status,
-      occupied_by: dbRow?.occupied_by_profile_id || null,
-      active_session_id: dbRow?.active_session_id || null
-    }
-  })
+      if (!active) return { ...reader, status: 'Libre' }
 
-  return Response.json({ readers: merged })
+      const diff = (now - new Date(active.last_activity)) / 1000
+
+      if (diff > 30) return { ...reader, status: 'Libre' }
+
+      return { ...reader, status: 'Ocupada' }
+    })
+
+    return new Response(JSON.stringify(result))
+  } catch (err) {
+    return new Response(JSON.stringify({ error: err.message }), { status: 500 })
+  }
 }
