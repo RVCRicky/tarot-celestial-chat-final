@@ -717,20 +717,14 @@ export default function ChatPage() {
     const { skipCentralMessage = false } = options
 
     if (!skipCentralMessage) {
-      await showTypingAndAnswer(
-        'central',
-        CENTRAL_NAME,
-        `Vale cielo, te transfiero con ${readerName}. Un momento...`,
-        1300
-      )
+      await addAndPersist('central', `Vale cielo, te transfiero con ${readerName}. Un momento...`, CENTRAL_NAME)
     }
 
     queue(() => {
       setMode('connecting')
       setTyping('')
       setActiveReader(readerName)
-      activeReaderRef.current = readerName
-    }, skipCentralMessage ? 250 : 1200)
+    }, 1200)
 
     const randomDelay = 2600 + Math.floor(Math.random() * 2600)
 
@@ -750,14 +744,11 @@ export default function ChatPage() {
 
       if (!res.ok) {
         setMode('central')
-        modeRef.current = 'central'
         setActiveReader(null)
-        activeReaderRef.current = null
-        await showTypingAndAnswer(
+        await addAndPersist(
           'central',
-          CENTRAL_NAME,
           `Cielo, justo ahora ${readerName} ha pasado a estar ocupada. Si quieres te recomiendo a otra de las que tengo libres en este momento.`,
-          1400
+          CENTRAL_NAME
         )
         await fetchReaders()
         return
@@ -765,9 +756,19 @@ export default function ChatPage() {
 
       resetVisibleConversation()
       setActiveReader(readerName)
-      activeReaderRef.current = readerName
       setMode('reader')
-      modeRef.current = 'reader'
+      setReaders((prev) =>
+        prev.map((reader) =>
+          reader.name === readerName
+            ? {
+                ...reader,
+                status: 'Ocupada',
+                occupied_by: profile.id,
+                active_session_id: currentSessionId
+              }
+            : reader
+        )
+      )
       setPendingTransfer(null)
       setPriceQuoteOpen(false)
       setMemory((prev) => ({
@@ -778,14 +779,13 @@ export default function ChatPage() {
         targetSign: prev.targetSign || ''
       }))
       await fetchReaders()
-      await heartbeat('reader', readerName)
 
       setTyping(`${readerName} está escribiendo...`)
       queue(async () => {
         setTyping('')
         await addAndPersist('reader', readerGreeting(readerName), readerName)
       }, 1800)
-    }, (skipCentralMessage ? 250 : 1200) + randomDelay)
+    }, 1200 + randomDelay)
   }
 
   const releaseReader = async (readerNameOverride = null) => {
@@ -809,8 +809,6 @@ export default function ChatPage() {
       })
     })
 
-    activeReaderRef.current = null
-    modeRef.current = 'central'
     await fetchReaders()
   }
 
@@ -865,10 +863,9 @@ export default function ChatPage() {
       await showTypingAndAnswer(
         'central',
         CENTRAL_NAME,
-        `Claro cielo, te paso ahora mismo con ${directReader.name}. Dame un instante.`,
-        1200
+        `Claro cielo, ahora mismo ${directReader.name} la tengo libre. Si quieres, te paso con ella ahora mismo.`,
+        1400
       )
-      await beginTransfer(directReader.name, { skipCentralMessage: true })
       return
     }
 
@@ -1141,33 +1138,14 @@ export default function ChatPage() {
   }
 
   const handleBackToCentral = async () => {
-    const currentReader = activeReaderRef.current
-
-    if (currentReader) {
-      await releaseReader(currentReader)
+    if (activeReaderRef.current) {
+      await releaseReader()
     }
-
-    setTyping('')
-    setPendingTransfer(null)
-    setPriceQuoteOpen(false)
     setActiveReader(null)
-    activeReaderRef.current = null
     setMode('central')
-    modeRef.current = 'central'
     resetVisibleConversation()
-    setMemory((prev) => ({
-      ...prev,
-      readerStage: 'intro',
-      targetName: '',
-      targetSign: ''
-    }))
-    await fetchReaders()
-    await showTypingAndAnswer(
-      'central',
-      CENTRAL_NAME,
-      `Hola ${profile.display_name}, ya estoy otra vez contigo. Dime qué necesitas y te ayudo encantada.`,
-      1200
-    )
+    setMemory((prev) => ({ ...prev, readerStage: 'intro' }))
+    await addAndPersist('central', `Hola ${profile.display_name}, ya estoy otra vez contigo. Dime qué necesitas y te ayudo encantada.`, CENTRAL_NAME)
   }
 
   const handleLogout = async () => {
