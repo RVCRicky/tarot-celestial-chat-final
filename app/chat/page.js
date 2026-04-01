@@ -742,6 +742,18 @@ export default function ChatPage() {
       })
       const json = await res.json()
 
+      // 🔥 FORZAR estado ocupada en UI inmediatamente
+setReaders(prev =>
+  prev.map(r =>
+    r.name === readerName
+      ? { ...r, status: 'Ocupada' }
+      : r
+  )
+)
+
+// 🔥 sincronizar con backend
+await fetchReaders()
+
       if (!res.ok) {
         setMode('central')
         setActiveReader(null)
