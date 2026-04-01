@@ -717,14 +717,20 @@ export default function ChatPage() {
     const { skipCentralMessage = false } = options
 
     if (!skipCentralMessage) {
-      await addAndPersist('central', `Vale cielo, te transfiero con ${readerName}. Un momento...`, CENTRAL_NAME)
+      await showTypingAndAnswer(
+        'central',
+        CENTRAL_NAME,
+        `Vale cielo, te transfiero con ${readerName}. Un momento...`,
+        1300
+      )
     }
 
     queue(() => {
       setMode('connecting')
       setTyping('')
       setActiveReader(readerName)
-    }, 1200)
+      activeReaderRef.current = readerName
+    }, skipCentralMessage ? 250 : 1200)
 
     const randomDelay = 2600 + Math.floor(Math.random() * 2600)
 
@@ -744,11 +750,14 @@ export default function ChatPage() {
 
       if (!res.ok) {
         setMode('central')
+        modeRef.current = 'central'
         setActiveReader(null)
-        await addAndPersist(
+        activeReaderRef.current = null
+        await showTypingAndAnswer(
           'central',
+          CENTRAL_NAME,
           `Cielo, justo ahora ${readerName} ha pasado a estar ocupada. Si quieres te recomiendo a otra de las que tengo libres en este momento.`,
-          CENTRAL_NAME
+          1400
         )
         await fetchReaders()
         return
@@ -756,7 +765,9 @@ export default function ChatPage() {
 
       resetVisibleConversation()
       setActiveReader(readerName)
+      activeReaderRef.current = readerName
       setMode('reader')
+      modeRef.current = 'reader'
       setPendingTransfer(null)
       setPriceQuoteOpen(false)
       setMemory((prev) => ({
@@ -767,13 +778,14 @@ export default function ChatPage() {
         targetSign: prev.targetSign || ''
       }))
       await fetchReaders()
+      await heartbeat('reader', readerName)
 
       setTyping(`${readerName} está escribiendo...`)
       queue(async () => {
         setTyping('')
         await addAndPersist('reader', readerGreeting(readerName), readerName)
       }, 1800)
-    }, 1200 + randomDelay)
+    }, (skipCentralMessage ? 250 : 1200) + randomDelay)
   }
 
   const releaseReader = async (readerNameOverride = null) => {
@@ -797,6 +809,8 @@ export default function ChatPage() {
       })
     })
 
+    activeReaderRef.current = null
+    modeRef.current = 'central'
     await fetchReaders()
   }
 
@@ -848,7 +862,13 @@ export default function ChatPage() {
 
     if (directReader && directReader.status === 'Libre') {
       setPendingTransfer(directReader.name)
-      await beginTransfer(directReader.name)
+      await showTypingAndAnswer(
+        'central',
+        CENTRAL_NAME,
+        `Claro cielo, te paso ahora mismo con ${directReader.name}. Dame un instante.`,
+        1200
+      )
+      await beginTransfer(directReader.name, { skipCentralMessage: true })
       return
     }
 
@@ -1121,14 +1141,33 @@ export default function ChatPage() {
   }
 
   const handleBackToCentral = async () => {
-    if (activeReaderRef.current) {
-      await releaseReader()
+    const currentReader = activeReaderRef.current
+
+    if (currentReader) {
+      await releaseReader(currentReader)
     }
+
+    setTyping('')
+    setPendingTransfer(null)
+    setPriceQuoteOpen(false)
     setActiveReader(null)
+    activeReaderRef.current = null
     setMode('central')
+    modeRef.current = 'central'
     resetVisibleConversation()
-    setMemory((prev) => ({ ...prev, readerStage: 'intro' }))
-    await addAndPersist('central', `Hola ${profile.display_name}, ya estoy otra vez contigo. Dime qué necesitas y te ayudo encantada.`, CENTRAL_NAME)
+    setMemory((prev) => ({
+      ...prev,
+      readerStage: 'intro',
+      targetName: '',
+      targetSign: ''
+    }))
+    await fetchReaders()
+    await showTypingAndAnswer(
+      'central',
+      CENTRAL_NAME,
+      `Hola ${profile.display_name}, ya estoy otra vez contigo. Dime qué necesitas y te ayudo encantada.`,
+      1200
+    )
   }
 
   const handleLogout = async () => {
