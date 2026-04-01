@@ -1252,7 +1252,7 @@ export default function ChatPage() {
               </div>
             )}
 
-            <div ref={scrollRef} onScroll={onScroll} style={{ flex: 1, minHeight: 0, padding: 18, overflowY: 'auto', display: 'grid', gap: 10 }}>
+            <div ref={scrollRef} onScroll={onScroll} style={{ flex: 1, minHeight: 0, padding: 18, overflowY: 'auto', display: 'flex', flexDirection: 'column',  gap: 10 }}>
               {mode === 'connecting' ? (
                 <div style={{ textAlign: 'center', color: '#8a6a2f', fontWeight: 700, marginTop: 10 }}>
                   Conectando con {activeReader}, un momento...
