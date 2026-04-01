@@ -17,13 +17,6 @@ export async function GET() {
       return new Response(JSON.stringify({ readers: [] }), { status: 200 })
     }
 
-    // 🔥 2. TRAER SESIONES ACTIVAS (CLAVE)
-   const activeSessionIds = new Set(
-  (data || [])
-    .filter(r => r.active_session_id)
-    .map(r => r.active_session_id)
-)
-
     // 🔥 traducir turno
     const translateShift = (shift) => {
       switch (shift) {
@@ -49,26 +42,26 @@ export async function GET() {
       return true
     }
 
-    // 🔥 3. MAPEO FINAL CORRECTO
+    // 🔥 2. MAPEO FINAL (SIN DEPENDER DE status)
     const readers = (data || []).map(r => {
-  let finalStatus = 'Libre'
+      let finalStatus = 'Libre'
 
-  // 🔥 SI TIENE SESSION → OCUPADA
-  if (r.active_session_id) {
-    finalStatus = 'Ocupada'
-  }
+      // ✅ PRIORIDAD ABSOLUTA: sesión activa
+      if (r.active_session_id) {
+        finalStatus = 'Ocupada'
+      }
 
-  // 🔥 SI NO → HORARIO
-  else if (!isShiftActive(r.shift)) {
-    finalStatus = 'Offline'
-  }
+      // ✅ SI NO → horario
+      else if (!isShiftActive(r.shift)) {
+        finalStatus = 'Offline'
+      }
 
-  return {
-    name: r.reader_name,
-    specialty: translateShift(r.shift),
-    status: finalStatus
-  }
-})
+      return {
+        name: r.reader_name,
+        specialty: translateShift(r.shift),
+        status: finalStatus
+      }
+    })
 
     return new Response(
       JSON.stringify({ readers }),
