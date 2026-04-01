@@ -506,8 +506,10 @@ export default function ChatPage() {
       if (readerName) {
         window.localStorage.setItem('tc_resume_reader', readerName)
         window.localStorage.setItem('tc_last_reader', readerName)
+        window.localStorage.setItem('tc_payment_pending_transfer', '1')
       } else {
         window.localStorage.removeItem('tc_resume_reader')
+        window.localStorage.removeItem('tc_payment_pending_transfer')
       }
     }
 
@@ -575,6 +577,7 @@ export default function ChatPage() {
 
       if (paymentSuccess) {
         window.localStorage.removeItem('tc_payment_success')
+        window.localStorage.removeItem('tc_payment_pending_transfer')
         await refreshProfileCredits(profileData.id)
         resetVisibleConversation()
 
@@ -752,6 +755,7 @@ export default function ChatPage() {
       }
 
       resetVisibleConversation()
+      setTyping('')
       setActiveReader(readerName)
       setMode('reader')
       setPendingTransfer(null)
@@ -769,7 +773,7 @@ export default function ChatPage() {
       queue(async () => {
         setTyping('')
         await addAndPersist('reader', readerGreeting(readerName), readerName)
-      }, 1800)
+      }, 1200)
     }, 1200 + randomDelay)
   }
 
@@ -1121,6 +1125,8 @@ export default function ChatPage() {
     if (activeReaderRef.current) {
       await releaseReader()
     }
+    setPendingTransfer(null)
+    setPriceQuoteOpen(false)
     setActiveReader(null)
     setMode('central')
     resetVisibleConversation()

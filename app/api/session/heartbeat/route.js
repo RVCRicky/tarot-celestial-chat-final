@@ -56,6 +56,25 @@ export async function POST(req) {
         last_seen_at: new Date().toISOString()
       })
       .eq('reader_name', body.currentReaderName)
+  } else {
+    const { data: currentSession } = await supabase
+      .from('chat_sessions')
+      .select('current_reader_name')
+      .eq('id', body.sessionId)
+      .maybeSingle()
+
+    if (currentSession?.current_reader_name) {
+      await supabase
+        .from('reader_statuses')
+        .update({
+          status: 'Libre',
+          occupied_by_profile_id: null,
+          active_session_id: null,
+          last_seen_at: new Date().toISOString()
+        })
+        .eq('reader_name', currentSession.current_reader_name)
+        .eq('active_session_id', body.sessionId)
+    }
   }
 
   return Response.json({ ok: true })
