@@ -17,9 +17,6 @@ import {
 
 const CENTRAL_NAME = 'Clara'
 
-const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null
-const cameFromPayment = urlParams?.get('paid') === '1'
-
 function readerGreeting(name) {
   const reader = READERS.find((r) => r.name === name)
   return reader
@@ -573,11 +570,14 @@ export default function ChatPage() {
       await fetchReaders()
       const existingMessages = await fetchMessages(sessionJson.session.id)
 
-      const paymentSuccess = typeof window !== 'undefined' && window.localStorage.getItem('tc_payment_success') === '1'
+      const paymentSuccess = typeof window !== 'undefined' && (window.localStorage.getItem('tc_payment_success') === '1' || new URLSearchParams(window.location.search).get('paid') === '1')
       const resumeReader = typeof window !== 'undefined' ? window.localStorage.getItem('tc_resume_reader') || '' : ''
 
       if (paymentSuccess) {
         window.localStorage.removeItem('tc_payment_success')
+        if (typeof window !== 'undefined' && window.location.search.includes('paid=1')) {
+          window.history.replaceState({}, '', '/chat')
+        }
         await refreshProfileCredits(profileData.id)
         resetVisibleConversation()
 
@@ -594,7 +594,7 @@ export default function ChatPage() {
           queue(async () => {
             await addAndPersist(
               'central',
-              `Perfecto ${profileData.display_name}, ya veo que el pago se ha confirmado y tus créditos están activos. Dime ahora con qué tarotista quieres seguir o, si prefieres, te recomiendo yo la mejor para ti.`,
+              `Vale cielo, ya veo el cobro confirmado y ya tienes tus créditos activos. Ahora dime con quién quieres utilizarlos y te paso con ella, o si prefieres te recomiendo yo la mejor para ti.`,
               CENTRAL_NAME
             )
           }, 700)
@@ -1264,12 +1264,16 @@ export default function ChatPage() {
                   return (
                     <div key={m.id || idx} style={{ display: 'flex', justifyContent: isClient ? 'flex-end' : 'flex-start' }}>
                       <div style={{
-                        maxWidth: '66%',
+                        maxWidth: 'min(440px, 82%)',
+                        width: 'fit-content',
                         padding: '12px 14px',
                         borderRadius: 16,
                         background: isClient ? '#6f3ea8' : '#faf6ff',
                         color: isClient ? '#fff' : '#4b2a67',
-                        border: isClient ? 'none' : '1px solid #eadcf8'
+                        border: isClient ? 'none' : '1px solid #eadcf8',
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word',
+                        boxSizing: 'border-box'
                       }}>
                         {!isClient && <div style={{ fontSize: 11, fontWeight: 700, color: '#8a6a2f', marginBottom: 5 }}>{String(senderLabel).toUpperCase()}</div>}
                         <div style={{ lineHeight: 1.5, fontSize: 15 }}>{m.text}</div>
@@ -1281,7 +1285,7 @@ export default function ChatPage() {
 
               {!!typing && (
                 <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
-                  <div style={{ background: '#faf6ff', border: '1px solid #eadcf8', borderRadius: 16, padding: '10px 14px', color: '#7a6690' }}>
+                  <div style={{ background: '#faf6ff', border: '1px solid #eadcf8', borderRadius: 16, padding: '10px 14px', color: '#7a6690', maxWidth: 'min(440px, 82%)', width: 'fit-content', whiteSpace: 'pre-wrap', wordBreak: 'break-word', boxSizing: 'border-box' }}>
                     {typing}
                   </div>
                 </div>

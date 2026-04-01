@@ -1,49 +1,36 @@
-
-import { createClient } from '@supabase/supabase-js'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-)
+import { getServiceSupabase } from '../../../../lib/serverSupabase'
+import { cleanupReaderSessionState } from '../../../../lib/sessionCleanup'
+import { READERS, currentShift } from '../../../../lib/chatShared'
 
 export async function GET() {
-  try {
-    const now = new Date()
+  const supabase = getServiceSupabase()
+  const shift = currentShift()
 
-    // limpiar sesiones muertas
-    await supabase
-      .from('sessions')
-      .update({ status: 'closed' })
-      .lt('last_activity', new Date(Date.now() - 30000).toISOString())
-      .eq('status', 'active')
+  await cleanupReaderSessionState(supabase)
 
-    const { data: readers, error: rError } = await supabase
-      .from('readers')
-      .select('*')
+  const { data: statusRows } = await supabase
+    .from('reader_statuses')
+    .select('*')
 
-    if (rError) throw rError
+  const rows = statusRows || []
 
-    const { data: sessions, error: sError } = await supabase
-      .from('sessions')
-      .select('*')
-      .eq('status', 'active')
+  const merged = READERS.map((reader) => {
+    const dbRow = rows.find((r) => r.reader_name === reader.name)
+    const shiftOnline = reader.shift === shift
 
-    if (sError) throw sError
+    let status = shiftOnline ? 'Libre' : 'Offline'
 
-    const result = readers.map((reader) => {
-      const active = sessions.find(s => s.reader_id === reader.id)
+    if (dbRow?.admin_force_status === 'offline') status = 'Offline'
+    if (dbRow?.admin_force_status === 'online') status = 'Libre'
+    if (dbRow?.status === 'Ocupada' && dbRow?.active_session_id) status = 'Ocupada'
 
-      if (!active) return { ...reader, status: 'Libre' }
+    return {
+      ...reader,
+      status,
+      occupied_by: dbRow?.occupied_by_profile_id || null,
+      active_session_id: dbRow?.active_session_id || null
+    }
+  })
 
-      const diff = (now - new Date(active.last_activity)) / 1000
-
-      if (diff > 30) return { ...reader, status: 'Libre' }
-
-      return { ...reader, status: 'Ocupada' }
-    })
-
-    return new Response(JSON.stringify(result))
-  } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), { status: 500 })
-  }
+  return Response.json({ readers: merged })
 }
