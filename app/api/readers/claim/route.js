@@ -6,7 +6,6 @@ export async function POST(req) {
   const body = await req.json()
   const { readerName, profileId, sessionId } = body
 
-  await cleanupReaderSessionState(supabase)
 
   // 🔥 LIMPIEZA FORZADA DEL READER
   await supabase
