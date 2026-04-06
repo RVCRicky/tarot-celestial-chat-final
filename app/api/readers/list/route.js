@@ -22,11 +22,23 @@ export async function GET() {
       return shift || ''
     }
 
+    const isShiftActive = (shift) => {
+      const hour = new Date().getHours()
+      if (shift === 'morning') return hour >= 6 && hour < 14
+      if (shift === 'afternoon') return hour >= 14 && hour < 22
+      if (shift === 'night') return hour >= 22 || hour < 6
+      return true
+    }
+
     const readers = (data || []).map(r => {
       let status = 'Libre'
 
-      if (r.active_session_id) {
+      // 🔥 SOLO ocupada si coincide sesión real
+      if (r.active_session_id && r.occupied_by_profile_id) {
         status = 'Ocupada'
+      } 
+      else if (!isShiftActive(r.shift)) {
+        status = 'Offline'
       }
 
       return {
