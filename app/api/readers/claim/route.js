@@ -9,7 +9,7 @@ export async function POST(req) {
     process.env.SUPABASE_SERVICE_ROLE_KEY
   )
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('reader_statuses')
     .update({
       active_session_id: body.session_id,
@@ -18,6 +18,10 @@ export async function POST(req) {
     .eq('reader_name', body.reader_name)
     .is('active_session_id', null)
     .select()
+
+  if (error) {
+    return Response.json({ error: error.message }, { status: 500 })
+  }
 
   if (!data || data.length === 0) {
     return Response.json({ error: 'already taken' }, { status: 409 })

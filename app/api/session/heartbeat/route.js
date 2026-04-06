@@ -11,7 +11,7 @@ export async function POST(req) {
 
   await supabase
     .from('chat_sessions')
-    .update({ heartbeat_at: new Date().toISOString() })
+    .update({ heartbeat_at: new Date().toISOString(), status: 'active' })
     .eq('id', body.session_id)
 
   return Response.json({ ok: true })
