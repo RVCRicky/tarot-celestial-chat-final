@@ -1,6 +1,11 @@
-// PRO readers list with computed status
-export default async function handler(req, res) {
-  const { supabase } = req
+
+import { createClient } from '@supabase/supabase-js'
+
+export async function GET() {
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  )
 
   const now = new Date()
 
@@ -14,11 +19,11 @@ export default async function handler(req, res) {
     .select('*')
 
   const result = readers.map(reader => {
-    const session = sessions.find(
+    const session = sessions?.find(
       s => s.current_reader_name === reader.reader_name
     )
 
-    const inShift = true // TODO: implement shift logic
+    const inShift = true
 
     if (!inShift) return { ...reader, computed_status: 'Offline' }
 
@@ -31,5 +36,5 @@ export default async function handler(req, res) {
     return { ...reader, computed_status: 'Libre' }
   })
 
-  res.json(result)
+  return Response.json(result)
 }
