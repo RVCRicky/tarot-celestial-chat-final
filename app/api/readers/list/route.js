@@ -1,41 +1,35 @@
-import { getServiceSupabase } from '../../../../lib/serverSupabase'
-import { cleanupReaderSessionState } from '../../../../lib/sessionCleanup'
-import { READERS } from '../../../../lib/chatShared'
-import { isSessionFresh, statusFromShift } from '../../../../lib/readerState'
+// PRO readers list with computed status
+export default async function handler(req, res) {
+  const { supabase } = req
 
-export async function GET() {
-  try {
-    const supabase = getServiceSupabase()
-    await cleanupReaderSessionState(supabase)
+  const now = new Date()
 
-    const [{ data: rows, error }, { data: sessions }] = await Promise.all([
-      supabase.from('reader_statuses').select('*'),
-      supabase.from('chat_sessions').select('id,current_reader_name,status,heartbeat_at')
-    ])
+  const { data: sessions } = await supabase
+    .from('chat_sessions')
+    .select('id, heartbeat_at, current_reader_name')
+    .eq('status', 'active')
 
-    if (error) return Response.json({ readers: [] })
+  const { data: readers } = await supabase
+    .from('reader_statuses')
+    .select('*')
 
-    const sessionMap = new Map((sessions || []).map((session) => [session.id, session]))
+  const result = readers.map(reader => {
+    const session = sessions.find(
+      s => s.current_reader_name === reader.reader_name
+    )
 
-    const readers = (rows || []).map((row) => {
-      const catalog = READERS.find((reader) => reader.name === row.reader_name)
-      const linked = row.active_session_id ? sessionMap.get(row.active_session_id) : null
-      const occupied =
-        !!row.occupied_by_profile_id &&
-        !!linked &&
-        linked.current_reader_name === row.reader_name &&
-        isSessionFresh(linked)
+    const inShift = true // TODO: implement shift logic
 
-      return {
-        name: row.reader_name,
-        specialty: catalog?.specialty || row.shift || '',
-        description: catalog?.description || '',
-        status: occupied ? 'Ocupada' : statusFromShift(row.reader_name, row.admin_force_status || null)
-      }
-    })
+    if (!inShift) return { ...reader, computed_status: 'Offline' }
 
-    return Response.json({ readers })
-  } catch {
-    return Response.json({ readers: [] })
-  }
+    if (!session) return { ...reader, computed_status: 'Libre' }
+
+    const seconds = (now - new Date(session.heartbeat_at)) / 1000
+
+    if (seconds < 20) return { ...reader, computed_status: 'Ocupada' }
+
+    return { ...reader, computed_status: 'Libre' }
+  })
+
+  res.json(result)
 }
