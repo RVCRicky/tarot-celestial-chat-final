@@ -713,82 +713,85 @@ export default function ChatPage() {
     return true
   }
 
- const beginTransfer = async (readerName, options = {}) => {
-  const { skipCentralMessage = false } = options
+  const beginTransfer = async (readerName, options = {}) => {
+    const { skipCentralMessage = false } = options
 
-  if (!skipCentralMessage) {
-    await addAndPersist(
-      'central',
-      `Vale cielo, te transfiero con ${readerName}. Un momento...`,
-      CENTRAL_NAME
-    )
-  }
+    if (!skipCentralMessage) {
+      await addAndPersist(
+        'central',
+        `Vale cielo, te transfiero con ${readerName}. Un momento...`,
+        CENTRAL_NAME
+      )
+    }
 
-  queue(() => {
-    setMode('connecting')
-    setTyping('')
-    setActiveReader(readerName)
-  }, 1200)
+    queue(() => {
+      setMode('connecting')
+      setTyping('')
+      setActiveReader(readerName)
+    }, 1200)
 
-  const randomDelay = 2600 + Math.floor(Math.random() * 2600)
+    const randomDelay = 2600 + Math.floor(Math.random() * 2600)
 
-  queue(async () => {
-    const currentSessionId = sessionRef.current?.id || session?.id
+    queue(async () => {
+      const currentSessionId = sessionRef.current?.id || session?.id
 
-    try {
-      const res = await fetch('/api/readers/claim', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          readerName,
-          profileId: profile.id,
-          sessionId: currentSessionId
+      try {
+        const res = await fetch('/api/readers/claim', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            readerName,
+            profileId: profile.id,
+            sessionId: currentSessionId
+          })
         })
-      })
 
-      const json = await res.json()
+        const json = await res.json()
 
-      if (!res.ok) {
-        setMode('central')
-        setActiveReader(null)
+        if (!res.ok) {
+          setMode('central')
+          setActiveReader(null)
 
-        await addAndPersist(
-          'central',
-          `Cielo, justo ahora ${readerName} ha pasado a estar ocupada. Si quieres te recomiendo a otra.`,
-          CENTRAL_NAME
-        )
+          await addAndPersist(
+            'central',
+            `Cielo, justo ahora ${readerName} ha pasado a estar ocupada. Si quieres te recomiendo a otra de las que tengo libres en este momento.`,
+            CENTRAL_NAME
+          )
+
+          await fetchReaders()
+          return
+        }
 
         await fetchReaders()
-        return
+
+        resetVisibleConversation()
+        setActiveReader(readerName)
+        setMode('reader')
+        setPendingTransfer(null)
+        setPriceQuoteOpen(false)
+
+        setMemory((prev) => ({
+          ...prev,
+          readerStage: 'intro',
+          lastReader: readerName,
+          targetName: prev.targetName || '',
+          targetSign: prev.targetSign || ''
+        }))
+
+        setTyping(`${readerName} está escribiendo...`)
+
+        queue(async () => {
+          setTyping('')
+          await addAndPersist('reader', readerGreeting(readerName), readerName)
+        }, 1800)
+      } catch (err) {
+        console.error('Error en beginTransfer:', err)
+        setMode('central')
+        setActiveReader(null)
+        await fetchReaders()
       }
-
-      // 🔥 SOLO backend manda
-      await fetchReaders()
-
-      resetVisibleConversation()
-      setActiveReader(readerName)
-      setMode('reader')
-      setPendingTransfer(null)
-      setPriceQuoteOpen(false)
-
-      setMemory((prev) => ({
-        ...prev,
-        readerStage: 'intro',
-        lastReader: readerName
-      }))
-
-      setTyping(`${readerName} está escribiendo...`)
-
-      queue(async () => {
-        setTyping('')
-        await addAndPersist('reader', readerGreeting(readerName), readerName)
-      }, 1800)
-
-    } catch (err) {
-      console.error('Error en beginTransfer:', err)
-    }
-  }, 1200 + randomDelay)
-}
+    }, 1200 + randomDelay)
+  }
 
   const releaseReader = async (readerNameOverride = null) => {
     const readerName = readerNameOverride || activeReaderRef.current
@@ -1271,64 +1274,64 @@ export default function ChatPage() {
               </div>
             )}
 
-            <div ref={scrollRef} onScroll={onScroll} style={{ flex: 1, minHeight: 0, padding: 18, overflowY: 'auto', display: 'flex', flexDirection: 'column',  gap: 10 }}>
+            <div ref={scrollRef} onScroll={onScroll} style={{ flex: 1, minHeight: 0, padding: 18, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
               {mode === 'connecting' ? (
                 <div style={{ textAlign: 'center', color: '#8a6a2f', fontWeight: 700, marginTop: 10 }}>
                   Conectando con {activeReader}, un momento...
                 </div>
               ) : (
                 messages.map((m, idx) => {
-  const isClient = m.sender === 'client'
-  const senderLabel = isClient
-    ? ''
-    : m.sender_name || (m.sender === 'central' ? CENTRAL_NAME : activeReader || 'Tarotista')
+                  const isClient = m.sender === 'client'
+                  const senderLabel = isClient
+                    ? ''
+                    : m.sender_name || (m.sender === 'central' ? CENTRAL_NAME : activeReader || 'Tarotista')
 
-  return (
-    <div
-      key={m.id || idx}
-      style={{
-        display: 'flex',
-        justifyContent: isClient ? 'flex-end' : 'flex-start',
-        paddingLeft: isClient ? 40 : 0,
-        paddingRight: isClient ? 0 : 40
-      }}
-    >
-      <div
-        style={{
-          display: 'inline-block',
-          maxWidth: '420px',
-          width: 'fit-content',
-          padding: '12px 14px',
-          borderRadius: isClient ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-          background: isClient ? '#6f3ea8' : '#faf6ff',
-          color: isClient ? '#fff' : '#4b2a67',
-          border: isClient ? 'none' : '1px solid #eadcf8',
-          whiteSpace: 'pre-wrap',
-          wordBreak: 'break-word',
-          lineHeight: 1.5,
-          fontSize: 15,
-          boxSizing: 'border-box',
-          boxShadow: '0 4px 10px rgba(0,0,0,0.04)'
-        }}
-      >
-        {!isClient && (
-          <div
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              color: '#8a6a2f',
-              marginBottom: 5
-            }}
-          >
-            {String(senderLabel).toUpperCase()}
-          </div>
-        )}
+                  return (
+                    <div
+                      key={m.id || idx}
+                      style={{
+                        display: 'flex',
+                        justifyContent: isClient ? 'flex-end' : 'flex-start',
+                        paddingLeft: isClient ? 40 : 0,
+                        paddingRight: isClient ? 0 : 40
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'inline-block',
+                          maxWidth: '420px',
+                          width: 'fit-content',
+                          padding: '12px 14px',
+                          borderRadius: isClient ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                          background: isClient ? '#6f3ea8' : '#faf6ff',
+                          color: isClient ? '#fff' : '#4b2a67',
+                          border: isClient ? 'none' : '1px solid #eadcf8',
+                          whiteSpace: 'pre-wrap',
+                          wordBreak: 'break-word',
+                          lineHeight: 1.5,
+                          fontSize: 15,
+                          boxSizing: 'border-box',
+                          boxShadow: '0 4px 10px rgba(0,0,0,0.04)'
+                        }}
+                      >
+                        {!isClient && (
+                          <div
+                            style={{
+                              fontSize: 11,
+                              fontWeight: 700,
+                              color: '#8a6a2f',
+                              marginBottom: 5
+                            }}
+                          >
+                            {String(senderLabel).toUpperCase()}
+                          </div>
+                        )}
 
-        {m.text}
-      </div>
-    </div>
-  )
-})
+                        {m.text}
+                      </div>
+                    </div>
+                  )
+                })
               )}
 
               {!!typing && (
