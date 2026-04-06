@@ -11,6 +11,7 @@ import {
   extractZodiac,
   isMainQuestion,
   isFollowup,
+  isSubstantiveReaderQuestion,
   estimateTypingMs,
   normalizeText
 } from '../../lib/chatShared'
@@ -423,7 +424,7 @@ export default function ChatPage() {
       : `${senderName || CENTRAL_NAME} está escribiendo...`
 
     setTyping(label)
-    const total = estimateTypingMs(cleanText, minDelay, 34, minDelay, 10000)
+    const total = estimateTypingMs(cleanText, { base: minDelay, cps: sender === 'reader' ? 7.5 : 10.5, min: minDelay, max: sender === 'reader' ? 38000 : 22000, extraPause: sender === 'reader' ? 1400 : 250 })
 
     queue(() => setTyping(''), Math.floor(total * 0.45))
     queue(() => setTyping(label), Math.floor(total * 0.62))
@@ -698,19 +699,24 @@ export default function ChatPage() {
     }
   }
 
-  const chargeMainQuestion = async () => {
-    if (!freeQuestionUsed) {
-      await supabase.from('profiles').update({ free_question_used: true }).eq('id', profile.id)
-      setFreeQuestionUsed(true)
-      return true
+  const consumeQuestionCredit = async () => {
+    const res = await fetch('/api/credits/consume', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profileId: profile.id })
+    })
+
+    const json = await res.json()
+
+    if (!res.ok) {
+      console.error('No se pudieron consumir créditos', json.error)
+      return false
     }
 
-    if (credits <= 0) return false
+    setCredits(Number(json.credits || 0))
+    setFreeQuestionUsed(!!json.freeQuestionUsed)
 
-    const newCredits = Math.max(credits - 1, 0)
-    await supabase.from('profiles').update({ credits: newCredits }).eq('id', profile.id)
-    setCredits(newCredits)
-    return true
+    return !!json.allowed
   }
 
   const beginTransfer = async (readerName, options = {}) => {
@@ -996,12 +1002,11 @@ export default function ChatPage() {
 
     if (stage === 'intro') {
       setMemory((prev) => ({ ...prev, readerStage: 'awaiting-main' }))
-      const ai = await askAI('reader', text)
       await showTypingAndAnswer(
         'reader',
         activeReaderRef.current,
-        ai || 'Claro cielo, ya te sigo mejor. Cuéntame ahora la pregunta principal que quieres que te mire conmigo y lo vemos despacio.',
-        2200
+        'Claro cielo, ya te sigo mejor. Cuéntame ahora la pregunta principal que quieres que te mire conmigo y lo vemos despacio.',
+        2800
       )
       return
     }
@@ -1017,7 +1022,7 @@ export default function ChatPage() {
         return
       }
 
-      const allowed = await chargeMainQuestion()
+      const allowed = await consumeQuestionCredit()
       if (!allowed) {
         await releaseReader()
         setMode('central')
@@ -1033,12 +1038,11 @@ export default function ChatPage() {
       }
 
       setMemory((prev) => ({ ...prev, readerStage: 'awaiting-target-sign' }))
-      const ai = await askAI('reader', text)
       await showTypingAndAnswer(
         'reader',
         activeReaderRef.current,
-        ai || `Vamos a mirarlo, cielo. ¿Sabes el horóscopo de ${memory.targetName || 'esa persona'}?`,
-        2600
+        `Vale, ya he abierto tu consulta. Antes de seguir, dime si sabes el signo de ${memory.targetName || 'esa persona'}. Si no lo sabes, me lo dices y sigo igualmente.`,
+        4200
       )
       return
     }
@@ -1048,39 +1052,57 @@ export default function ChatPage() {
       await showTypingAndAnswer(
         'reader',
         activeReaderRef.current,
-        'Perfecto cielo, dime ahora un número del 1 al 22 y elige izquierda, derecha o centro.',
-        1900
+        'Perfecto cielo... ahora elige un número del 1 al 22 y dime izquierda, centro o derecha. Voy a cerrar la tirada con eso.',
+        3600
       )
       return
     }
 
     if (stage === 'awaiting-card') {
-      setMemory((prev) => ({ ...prev, readerStage: 'answer-given' }))
+      setMemory((prev) => ({ ...prev, readerStage: 'consulting' }))
       const ai = await askAI('reader', text)
       await showTypingAndAnswer(
         'reader',
         activeReaderRef.current,
-        ai || `Estoy haciendo la tirada, cielo... Dame un instante. Por lo que veo, ${memory.targetName || 'esa persona'} sí quiere volver, pero hay orgullo, bloqueo y una energía que todavía no termina de moverse como debería. No veo esto cerrado del todo.`,
-        5200
+        ai || `Estoy cerrando la tirada, cielo... Lo que me sale es que ${memory.targetName || 'esa persona'} aún tiene vínculo contigo, pero no le veo moviéndose de inmediato. Hay sentimiento, sí, aunque también bastante bloqueo y orgullo.`,
+        8200
       )
       return
     }
 
-    if (stage === 'answer-given') {
-      if (isFollowup(text)) {
-        setMemory((prev) => ({ ...prev, readerStage: 'followup-used' }))
-        const ai = await askAI('reader', text)
+    if (stage === 'consulting') {
+      if (!isSubstantiveReaderQuestion(text)) {
         await showTypingAndAnswer(
           'reader',
           activeReaderRef.current,
-          ai || 'No cielo, lo que me marca la energía es que el movimiento viene más desde él que desde ti. Pero si quieres que profundicemos un poco más, ya necesitaríamos créditos para seguir con la consulta.',
-          3200
+          'Te sigo, cielo. Hazme la siguiente pregunta lo más concreta que puedas y te la miro directa.',
+          2600
         )
         return
       }
-    }
 
-    if (stage === 'followup-used') {
+      const allowed = await consumeQuestionCredit()
+      if (!allowed) {
+        await releaseReader()
+        setMode('central')
+        setActiveReader(null)
+        resetVisibleConversation()
+        await showTypingAndAnswer(
+          'central',
+          CENTRAL_NAME,
+          'Cielo, te has quedado sin créditos para seguir preguntando. Si quieres, te activo ahora mismo otro paquete y te vuelvo a pasar con tu tarotista.',
+          1800
+        )
+        return
+      }
+
+      const ai = await askAI('reader', text)
+      await showTypingAndAnswer(
+        'reader',
+        activeReaderRef.current,
+        ai || 'Lo que me sigue marcando es movimiento, pero lento. No lo veo roto del todo; lo veo pensando más de lo que habla.',
+        7600
+      )
       return
     }
   }

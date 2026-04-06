@@ -1,9 +1,9 @@
 import { getServiceSupabase } from '../../../../lib/serverSupabase'
+import { cleanupReaderSessionState } from '../../../../lib/sessionCleanup'
 
 export async function POST(req) {
   const supabase = getServiceSupabase()
   const body = await req.json()
-
   const now = new Date().toISOString()
 
   await supabase
@@ -20,11 +20,13 @@ export async function POST(req) {
     await supabase
       .from('reader_statuses')
       .update({
+        status: 'Ocupada',
         active_session_id: body.sessionId,
         last_seen_at: now
       })
       .eq('reader_name', body.currentReaderName)
   }
 
+  await cleanupReaderSessionState(supabase)
   return Response.json({ ok: true })
 }

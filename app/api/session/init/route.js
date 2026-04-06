@@ -5,6 +5,7 @@ export async function POST(req) {
   const supabase = getServiceSupabase()
   const body = await req.json()
   const { profileId } = body
+  const now = new Date().toISOString()
 
   await cleanupReaderSessionState(supabase)
 
@@ -20,15 +21,10 @@ export async function POST(req) {
   if (existing) {
     await supabase
       .from('chat_sessions')
-      .update({ heartbeat_at: new Date().toISOString() })
+      .update({ heartbeat_at: now })
       .eq('id', existing.id)
 
-    return Response.json({
-      session: {
-        ...existing,
-        heartbeat_at: new Date().toISOString()
-      }
-    })
+    return Response.json({ session: { ...existing, heartbeat_at: now } })
   }
 
   const { data, error } = await supabase
@@ -38,7 +34,7 @@ export async function POST(req) {
       mode: 'central',
       status: 'active',
       current_reader_name: null,
-      heartbeat_at: new Date().toISOString()
+      heartbeat_at: now
     })
     .select('*')
     .single()

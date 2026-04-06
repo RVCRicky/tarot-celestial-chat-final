@@ -1,56 +1,41 @@
-import { createClient } from '@supabase/supabase-js'
+import { getServiceSupabase } from '../../../../lib/serverSupabase'
+import { cleanupReaderSessionState } from '../../../../lib/sessionCleanup'
+import { READERS } from '../../../../lib/chatShared'
+import { isSessionFresh, statusFromShift } from '../../../../lib/readerState'
 
 export async function GET() {
   try {
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY
-    )
+    const supabase = getServiceSupabase()
+    await cleanupReaderSessionState(supabase)
 
-    const { data, error } = await supabase
-      .from('reader_statuses')
-      .select('*')
+    const [{ data: rows, error }, { data: sessions }] = await Promise.all([
+      supabase.from('reader_statuses').select('*'),
+      supabase.from('chat_sessions').select('id,current_reader_name,status,heartbeat_at')
+    ])
 
-    if (error) {
-      return new Response(JSON.stringify({ readers: [] }), { status: 200 })
-    }
+    if (error) return Response.json({ readers: [] })
 
-    const translateShift = (shift) => {
-      if (shift === 'morning') return 'Mañana'
-      if (shift === 'afternoon') return 'Tarde'
-      if (shift === 'night') return 'Noche'
-      return shift || ''
-    }
+    const sessionMap = new Map((sessions || []).map((session) => [session.id, session]))
 
-    const isShiftActive = (shift) => {
-      const hour = new Date().getHours()
-      if (shift === 'morning') return hour >= 6 && hour < 14
-      if (shift === 'afternoon') return hour >= 14 && hour < 22
-      if (shift === 'night') return hour >= 22 || hour < 6
-      return true
-    }
-
-    const readers = (data || []).map(r => {
-      let status = 'Libre'
-
-      // 🔥 SOLO ocupada si coincide sesión real
-      if (r.active_session_id && r.occupied_by_profile_id) {
-        status = 'Ocupada'
-      } 
-      else if (!isShiftActive(r.shift)) {
-        status = 'Offline'
-      }
+    const readers = (rows || []).map((row) => {
+      const catalog = READERS.find((reader) => reader.name === row.reader_name)
+      const linked = row.active_session_id ? sessionMap.get(row.active_session_id) : null
+      const occupied =
+        !!row.occupied_by_profile_id &&
+        !!linked &&
+        linked.current_reader_name === row.reader_name &&
+        isSessionFresh(linked)
 
       return {
-        name: r.reader_name,
-        specialty: translateShift(r.shift),
-        status
+        name: row.reader_name,
+        specialty: catalog?.specialty || row.shift || '',
+        description: catalog?.description || '',
+        status: occupied ? 'Ocupada' : statusFromShift(row.reader_name, row.admin_force_status || null)
       }
     })
 
-    return new Response(JSON.stringify({ readers }), { status: 200 })
-
+    return Response.json({ readers })
   } catch {
-    return new Response(JSON.stringify({ readers: [] }), { status: 200 })
+    return Response.json({ readers: [] })
   }
 }
