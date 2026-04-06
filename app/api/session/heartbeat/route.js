@@ -1,16 +1,15 @@
 import { getServiceSupabase } from '../../../../lib/serverSupabase'
-import { cleanupReaderSessionState } from '../../../../lib/sessionCleanup'
 
 export async function POST(req) {
   const supabase = getServiceSupabase()
   const body = await req.json()
 
-  await cleanupReaderSessionState(supabase)
+  const now = new Date().toISOString()
 
   await supabase
     .from('chat_sessions')
     .update({
-      heartbeat_at: new Date().toISOString(),
+      heartbeat_at: now,
       mode: body.mode || 'central',
       current_reader_name: body.currentReaderName || null,
       status: 'active'
@@ -21,9 +20,8 @@ export async function POST(req) {
     await supabase
       .from('reader_statuses')
       .update({
-        status: 'Ocupada',
         active_session_id: body.sessionId,
-        last_seen_at: new Date().toISOString()
+        last_seen_at: now
       })
       .eq('reader_name', body.currentReaderName)
   }
